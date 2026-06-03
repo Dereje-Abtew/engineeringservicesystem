@@ -1,0 +1,25 @@
+# Backend
+backend/bin/
+backend/obj/
+
+# Frontend
+frontend/node_modules/
+frontend/.next/
+frontend/dist/
+
+# Env
+.env
+*.env
+.env.local
+*.env.local
+
+# Logs
+*.log
+
+# VS
+.vs/
+.vscode/
+
+# OS
+Thumbs.db
+.DS_Store
