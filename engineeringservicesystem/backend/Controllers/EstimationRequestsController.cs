@@ -77,7 +77,7 @@ namespace backend.Controllers
         [ProducesResponseType(StatusCodes.Status204NoContent)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
-        public async Task<IActionResult> PrepareReport(int id, [FromBody] EngineeringReport report)
+        public async Task<IActionResult> PrepareReport(int id, [FromBody] CreateEngineeringReportDto reportDto)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
             if (string.IsNullOrEmpty(userId))
@@ -85,7 +85,7 @@ namespace backend.Controllers
                 return Unauthorized();
             }
 
-            var (succeeded, errorMessage) = await _requestsService.PrepareReportAsync(id, report, userId);
+            var (succeeded, errorMessage) = await _requestsService.PrepareReportAsync(id, reportDto, userId);
             if (!succeeded)
             {
                 if (errorMessage == "Id mismatch") return BadRequest(new { Message = errorMessage });
@@ -225,29 +225,29 @@ namespace backend.Controllers
         }
 
         // PUT: api/EstimationRequests/5/report
-[Authorize(Policy = Permissions.RequestsApprove)]
-[HttpPut("{id}/report")]
-[ProducesResponseType(StatusCodes.Status204NoContent)]
-[ProducesResponseType(StatusCodes.Status400BadRequest)]
-[ProducesResponseType(StatusCodes.Status404NotFound)]
-public async Task<IActionResult> UpdateReport(int id, [FromBody] EngineeringReport report)
-{
-    var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-    if (string.IsNullOrEmpty(userId))
-    {
-        return Unauthorized();
-    }
+        [Authorize(Policy = Permissions.RequestsApprove)]
+        [HttpPut("{id}/report")]
+        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> UpdateReport(int id, [FromBody] CreateEngineeringReportDto reportDto)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId))
+            {
+                return Unauthorized();
+            }
 
-    // Reuse the same method - it handles both create and update
-    var (succeeded, errorMessage) = await _requestsService.PrepareReportAsync(id, report, userId);
-    if (!succeeded)
-    {
-        if (errorMessage == "Id mismatch") return BadRequest(new { Message = errorMessage });
-        return NotFound(new { Message = errorMessage });
-    }
+            // Reuse the same method - it handles both create and update
+            var (succeeded, errorMessage) = await _requestsService.PrepareReportAsync(id, reportDto, userId);
+            if (!succeeded)
+            {
+                if (errorMessage == "Id mismatch") return BadRequest(new { Message = errorMessage });
+                return NotFound(new { Message = errorMessage });
+            }
 
-    return NoContent();
-}
+            return NoContent();
+        }
 
 
 

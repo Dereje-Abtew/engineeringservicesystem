@@ -18,6 +18,8 @@ public class CreateEngineeringReportDto
     [Required]
     [Range(0, double.MaxValue, ErrorMessage = "Estimated value must be a positive number")]
     public double EstimatedValue { get; set; }
+
+    public List<AttachmentUploadDto>? Attachments { get; set; }
 }
 
 public class UpdateEngineeringReportDto

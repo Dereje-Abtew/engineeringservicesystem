@@ -85,6 +85,7 @@ namespace backend.Services
                 "guarantee" => PurposeOfEstimation.Guarantee,
                 "loan" => PurposeOfEstimation.Loan,
                 "foreclosure" => PurposeOfEstimation.Foreclosure,
+                "project finance" => PurposeOfEstimation.ProjectFinance,
                 _ => PurposeOfEstimation.Mortgage
             };
 
@@ -109,6 +110,8 @@ namespace backend.Services
                 BuildingType = buildingType,
                 Purpose = purpose,
                 Type = type,
+                ProjectFinanceDocType = dto.ProjectFinanceDocType,
+                BillOfPenalty = dto.BillOfPenalty,
                 BranchUserId = userId,
                 Status = RequestStatus.Pending,
                 CreatedAt = DateTime.UtcNow
@@ -247,12 +250,26 @@ namespace backend.Services
             return true;
         }
 
-        public async Task<(bool Succeeded, string? ErrorMessage)> PrepareReportAsync(int id, EngineeringReport report, string userId)
+        public async Task<(bool Succeeded, string? ErrorMessage)> PrepareReportAsync(int id, CreateEngineeringReportDto reportDto, string userId)
+        {
+            var report = new EngineeringReport
+            {
+                EstimationRequestId = reportDto.EstimationRequestId,
+                SiteVisitDate = reportDto.SiteVisitDate,
+                Remarks = reportDto.Remarks,
+                EstimatedValue = reportDto.EstimatedValue
+            };
+
+            return await PrepareReportAsync(id, report, userId, reportDto.Attachments);
+        }
+
+        public async Task<(bool Succeeded, string? ErrorMessage)> PrepareReportAsync(int id, EngineeringReport report, string userId, List<AttachmentUploadDto>? attachments = null)
         {
             if (id != report.EstimationRequestId) return (false, "Id mismatch");
 
             var estimationRequest = await _context.EstimationRequests
                 .Include(r => r.Report)
+                .Include(r => r.Attachments)
                 .FirstOrDefaultAsync(r => r.Id == id);
 
             if (estimationRequest == null) return (false, "Request not found");
@@ -278,6 +295,29 @@ namespace backend.Services
                 _context.EngineeringReports.Add(report);
             }
 
+            if (attachments?.Any() == true)
+            {
+                var attachmentTypes = attachments.Select(a => a.DocumentType).Distinct().ToList();
+                var existingAttachments = estimationRequest.Attachments?
+                    .Where(a => attachmentTypes.Contains(a.DocumentType))
+                    .ToList() ?? new List<Attachment>();
+
+                if (existingAttachments.Any())
+                {
+                    _context.Attachments.RemoveRange(existingAttachments);
+                }
+
+                var newAttachments = attachments.Select(a => new Attachment
+                {
+                    FileName = a.FileName,
+                    FilePath = a.FilePath,
+                    DocumentType = a.DocumentType,
+                    EstimationRequestId = estimationRequest.Id
+                });
+
+                _context.Attachments.AddRange(newAttachments);
+            }
+
             if (estimationRequest.Status != RequestStatus.Estimated)
             {
                 estimationRequest.Status = RequestStatus.Estimated;
@@ -285,6 +325,11 @@ namespace backend.Services
 
             await _context.SaveChangesAsync();
             return (true, null);
+        }
+
+        public async Task<(bool Succeeded, string? ErrorMessage)> PrepareReportAsync(int id, EngineeringReport report, string userId)
+        {
+            return await PrepareReportAsync(id, report, userId, null);
         }
 
         public async Task<(bool Succeeded, string? ErrorMessage)> UpdateReportAsync(int id, EngineeringReport report, string userId)
@@ -320,7 +365,7 @@ namespace backend.Services
                 Longitude = request.Longitude,
                 PlotArea = request.PlotArea,
                 BuildingType = request.BuildingType.ToString(),
-                Purpose = request.Purpose.ToString(),
+                Purpose = request.Purpose == PurposeOfEstimation.ProjectFinance ? "Project Finance" : request.Purpose.ToString(),
                 Type = request.Type.ToString(),
                 Status = (int)request.Status,
                 CreatedAt = request.CreatedAt,
@@ -348,6 +393,9 @@ namespace backend.Services
                 ManagerActionDate = request.ManagerActionDate,
                 ManagerActionDescription = request.ManagerActionDescription,
                 ManagerRejectionReason = request.ManagerRejectionReason
+                ,
+                ProjectFinanceDocType = request.ProjectFinanceDocType,
+                BillOfPenalty = request.BillOfPenalty
             };
         }
     }

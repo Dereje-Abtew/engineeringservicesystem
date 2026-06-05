@@ -8,7 +8,8 @@ public enum PurposeOfEstimation
     Mortgage,     // 0
     Guarantee,    // 1
     Loan,         // 2
-    Foreclosure   // 3
+    Foreclosure,  // 3
+    ProjectFinance // 4
 }
 
 public enum TypeOfBuilding
@@ -73,4 +74,7 @@ public class EstimationRequest
     public string? AssignedEngineerId { get; set; }
     public ApplicationUser? AssignedEngineer { get; set; }
     public DateTime? EngineerAssignmentDate { get; set; }
+    // Project Finance specific fields
+    public string? ProjectFinanceDocType { get; set; }
+    public bool? BillOfPenalty { get; set; }
 }

@@ -1,30 +1,33 @@
 'use client';
 
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import { 
   Typography, Box, Chip, IconButton, Button, Paper, Menu, MenuItem, 
   ListItemIcon, ListItemText, Dialog, DialogTitle, DialogContent, 
-  DialogActions, TextField, CircularProgress, Alert, List, 
-  ListItem, FormHelperText, Card, CardContent, Divider, Tabs, Tab, 
-  Select, FormControl, InputLabel, Fade, Zoom, Slide, Grow,
-  LinearProgress, Rating, Tooltip, Avatar, Badge, keyframes
+  DialogActions, TextField, CircularProgress, Alert, FormHelperText, Card, CardContent, Divider, Tabs, Tab, 
+  Select, FormControl, InputLabel, Checkbox, FormControlLabel, Zoom, Tooltip, Avatar, Badge, keyframes,
+  type SelectChangeEvent
 } from '@mui/material';
 import Grid from '@mui/material/GridLegacy';
 import { 
-  Eye, Plus, MoreVertical, CheckCircle, XCircle, Upload, X, FileText, 
-  TrendingUp, Users, MapPin, RefreshCw, Trash2, Edit, Download, 
-  Zap, Star, Award, Target, Crown, UserCheck, Clock, Home, Building,
-  FileCheck, Landmark, Percent, Ruler, Phone, Mail, User, Key,
-  Sparkles, Brain, Rocket, Shield, Gem, ThumbsUp, Briefcase,
-  Trophy, Medal, Compass, Navigation, Heart, Flame, Settings,
-  BarChart3, Activity, Gauge, AlertCircle, Check, ArrowRight
+  Eye, Plus, CheckCircle, XCircle, Upload, X, FileText, 
+  Users, MapPin, RefreshCw, Trash2, Edit, Download, 
+  Zap, Star, Target, Crown, Home, Building,
+  Ruler, 
+  // Phone, Mail, User, Key,
+  // Sparkles, Brain, Rocket, Shield, Gem, ThumbsUp,
+   Briefcase,
+  Trophy, Medal, Compass,
+  //  Navigation, Heart, Flame, Settings,BarChart3, 
+  Activity,
+  //  Gauge, AlertCircle, Check, ArrowRight
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/store';
 import { usePermissions } from '@/hooks/usePermissions';
 import api from '@/utils/api';
-import { useFormik } from 'formik';
+import { useFormik, type FormikProps } from 'formik';
 import * as Yup from 'yup';
 import RequestsTable from '@/components/RequestsTable';
 import { fetchEthiopianLocations, EthiopianRegion, EthiopianCity, EthiopianSubCity } from '@/constants/ethiopianLocations';
@@ -122,6 +125,8 @@ interface EstimationRequest {
     createdAt: string;
     assignedEngineerName?: string;
   };
+  projectFinanceDocType?: string;
+  billOfPenalty?: boolean;
   attachments?: Attachment[];
 }
 
@@ -130,6 +135,25 @@ interface Attachment {
   fileName: string;
   fileUrl: string;
   documentType: string;
+}
+
+interface RequestFormValues {
+  applicantName: string;
+  ownerName: string;
+  lhuNo: string;
+  region: string;
+  cityId: string;
+  subCityId: string;
+  kebeleName: string;
+  city: string;
+  subCity: string;
+  kebele: string;
+  plotArea: string;
+  buildingType: string;
+  purpose: string;
+  projectFinanceDocType: string;
+  billOfPenalty: boolean;
+  type: string;
 }
 
 interface EngOfficer {
@@ -158,6 +182,42 @@ interface AssignmentRecommendation {
 }
 
 type WorkflowActionType = 'checker_approve' | 'checker_reject' | 'manager_approve' | 'manager_reject' | 'manager_assign' | 'manager_manage' | null;
+
+interface ApiErrorResponse {
+  message?: string;
+  errors?: Record<string, string[] | string>;
+}
+
+interface ApiError {
+  response?: { data?: ApiErrorResponse };
+}
+
+interface OfficerApiRecord {
+  id?: string | number;
+  firstName?: string;
+  FirstName?: string;
+  lastName?: string;
+  LastName?: string;
+  email?: string;
+  [key: string]: unknown;
+}
+
+const getErrorMessage = (error: unknown, fallback = 'An unexpected error occurred'): string => {
+  if (typeof error === 'string') return error;
+  if (typeof error === 'object' && error !== null) {
+    const err = error as ApiError;
+    return err.response?.data?.message || fallback;
+  }
+  return fallback;
+};
+
+const getErrorData = (error: unknown): ApiErrorResponse | undefined => {
+  if (typeof error === 'object' && error !== null) {
+    const err = error as ApiError;
+    return err.response?.data;
+  }
+  return undefined;
+};
 
 // =================================================================
 // Password Change Dialog Component
@@ -199,8 +259,8 @@ const PasswordChangeDialog = ({ open, onClose }: { open: boolean; onClose: () =>
         setConfirmPassword('');
         setSuccess('');
       }, 2000);
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to change password');
+    } catch (error: unknown) {
+      setError(getErrorMessage(error, 'Failed to change password'));
     } finally {
       setLoading(false);
     }
@@ -355,6 +415,12 @@ const ViewDetailsDialog = ({ open, onClose, request }: { open: boolean; onClose:
           <Grid item xs={12} md={6}><Typography variant="body2" sx={{ color: '#64748b' }}>Kebele</Typography><Typography variant="body1" fontWeight="600">{request.kebele}</Typography></Grid>
           <Grid item xs={12} md={6}><Typography variant="body2" sx={{ color: '#64748b' }}>Purpose</Typography><Typography variant="body1" fontWeight="600">{request.purpose}</Typography></Grid>
           <Grid item xs={12} md={6}><Typography variant="body2" sx={{ color: '#64748b' }}>Type</Typography><Typography variant="body1" fontWeight="600">{request.type}</Typography></Grid>
+          {request.purpose === 'Project Finance' && (
+            <>
+              <Grid item xs={12} md={6}><Typography variant="body2" sx={{ color: '#64748b' }}>Project Finance Document</Typography><Typography variant="body1" fontWeight="600">{(request as any).projectFinanceDocType || '-'}</Typography></Grid>
+              <Grid item xs={12} md={6}><Typography variant="body2" sx={{ color: '#64748b' }}>Bill of Penalty</Typography><Typography variant="body1" fontWeight="600">{(request as any).billOfPenalty ? 'Yes' : 'No'}</Typography></Grid>
+            </>
+          )}
           
           <Grid item xs={12}><Typography variant="subtitle1" fontWeight="700" sx={{ color: '#064E3B', mt: 2, mb: 2, borderBottom: '2px solid #064E3B', pb: 1 }}>Attachments ({attachments.length})</Typography></Grid>
           <Grid item xs={12}>
@@ -441,41 +507,74 @@ const EstimationFormDialog = ({
   request: EstimationRequest | null; 
   onSuccess: () => void;
   isEdit?: boolean;
-  existingReport?: any;
+  existingReport?: EstimationRequest['report'] | null;
 }) => {
+  const { notify } = useAuthStore();
   const [submitting, setSubmitting] = useState(false);
 
-  const parseExistingRemarks = (remarks: string) => {
-    const buildingConditionMatch = remarks.match(/Building Condition: (.+)/);
-    const marketRateMatch = remarks.match(/Market Rate per sqm: (.+) ETB/);
-    const recommendationsMatch = remarks.match(/=== VALUATION NOTES & RECOMMENDATIONS ===\n([\s\S]*?)\n=== ADDITIONAL NOTES ===/);
-    const notesMatch = remarks.match(/=== ADDITIONAL NOTES ===\n([\s\S]*?)\n=== PROPERTY DETAILS ===/);
-    
-    return {
-      buildingCondition: buildingConditionMatch ? buildingConditionMatch[1].trim() : 'Good',
-      marketRatePerSqm: marketRateMatch ? marketRateMatch[1].trim() : '',
-      recommendations: recommendationsMatch ? recommendationsMatch[1].trim() : '',
-      notes: notesMatch ? notesMatch[1].trim() : ''
-    };
+  const [reportAttachments, setReportAttachments] = useState<Attachment[]>([]);
+  const [reportUploading, setReportUploading] = useState(false);
+  const [reportUploadError, setReportUploadError] = useState<string | null>(null);
+
+  const handleUploadReportFile = async (e: React.ChangeEvent<HTMLInputElement>, type: string) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      setReportUploadError(`${type} is too large. Please upload a file that is 10 MB or smaller.`);
+      e.target.value = '';
+      return;
+    }
+    setReportUploadError(null);
+    setReportUploading(true);
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      const res = await api.post<{ url: string }>('/Attachments/upload', fd, { silent: true });
+      setReportAttachments(prev => [
+        ...prev.filter(existing => existing.documentType !== type),
+        { fileName: file.name, fileUrl: res.url, documentType: type }
+      ]);
+    } catch {
+      setReportUploadError('Upload failed');
+    } finally {
+      setReportUploading(false);
+      e.target.value = '';
+    }
   };
 
-  const formik = useFormik({
+  useEffect(() => {
+    if (!open) {
+      setReportAttachments([]);
+      return;
+    }
+
+    if (request?.attachments?.length) {
+      setReportAttachments(request.attachments.filter(a => ['Estimation Excel', 'Relevant Photo', 'Estimation Report'].includes(a.documentType)));
+    } else {
+      setReportAttachments([]);
+    }
+  }, [open, request]);
+
+  const attachmentTypes = ['Estimation Excel', 'Relevant Photo', 'Estimation Report'];
+  interface ValuationFormValues {
+    estimatedValue: string;
+    siteVisitDate: string;
+    remarks: string;
+    attachments: string;
+  }
+
+  const formik = useFormik<ValuationFormValues>({
+    enableReinitialize: true,
     initialValues: {
       estimatedValue: isEdit && existingReport ? existingReport.estimatedValue.toString() : '',
       siteVisitDate: isEdit && existingReport ? existingReport.siteVisitDate?.split('T')[0] : new Date().toISOString().split('T')[0],
       remarks: isEdit && existingReport ? existingReport.remarks : '',
-      buildingCondition: isEdit && existingReport ? parseExistingRemarks(existingReport.remarks).buildingCondition : 'Good',
-      marketRatePerSqm: isEdit && existingReport ? parseExistingRemarks(existingReport.remarks).marketRatePerSqm : '',
-      recommendations: isEdit && existingReport ? parseExistingRemarks(existingReport.remarks).recommendations : '',
-      notes: isEdit && existingReport ? parseExistingRemarks(existingReport.remarks).notes : ''
+      attachments: ''
     },
     validationSchema: Yup.object({
       estimatedValue: Yup.number()
-        .required('Estimated value is required')
-        .positive('Must be positive')
-        .typeError('Must be a valid number'),
-      marketRatePerSqm: Yup.number()
-        .required('Market rate is required')
+        .nullable()
+        .transform((value, originalValue) => (originalValue === '' ? null : value))
         .positive('Must be positive')
         .typeError('Must be a valid number'),
       remarks: Yup.string()
@@ -484,77 +583,65 @@ const EstimationFormDialog = ({
         .max(1000, 'Remarks cannot exceed 1000 characters'),
       siteVisitDate: Yup.date().required('Site visit date is required'),
     }),
+    validate: () => {
+      const errors: Record<string, string> = {};
+      const missingAttachments = attachmentTypes.filter(type => !reportAttachments.some(a => a.documentType === type));
+      if (missingAttachments.length > 0) {
+        errors.attachments = `Required uploads: ${missingAttachments.join(', ')}`;
+      }
+      return errors;
+    },
     onSubmit: async (values) => {
       if (!request) return;
       setSubmitting(true);
       try {
         const comprehensiveRemarks = `
-=== VALUATION REPORT ===
-Building Condition: ${values.buildingCondition}
-Market Rate per sqm: ${values.marketRatePerSqm} ETB
-
-=== VALUATION NOTES & RECOMMENDATIONS ===
-${values.recommendations || 'No recommendations provided'}
-
-=== ADDITIONAL NOTES ===
-${values.notes || 'No additional notes'}
-
-=== PROPERTY DETAILS ===
+=== PROPERTY SUMMARY ===
 Plot Area: ${request.plotArea} sqm
 Building Type: ${request.buildingType}
 Location: ${request.subCity}, ${request.kebele}
 LHU Number: ${request.lhuNo}
         `.trim();
 
-        const payload = {
+        const payload: any = {
           estimationRequestId: request.id,
           siteVisitDate: new Date(values.siteVisitDate).toISOString(),
           remarks: values.remarks || comprehensiveRemarks,
-          estimatedValue: parseFloat(values.estimatedValue)
+          estimatedValue: values.estimatedValue ? parseFloat(values.estimatedValue) : 0,
+          attachments: reportAttachments.map(a => ({
+            fileName: a.fileName,
+            filePath: a.fileUrl,
+            documentType: a.documentType
+          }))
         };
 
         if (isEdit && existingReport) {
           await api.put(`/EstimationRequests/${request.id}/report`, payload);
-          alert('Estimation updated successfully!');
+          notify('Estimation updated successfully!', 'success');
         } else {
           await api.post(`/EstimationRequests/${request.id}/report`, payload);
-          alert('Estimation submitted successfully!');
+          notify('Estimation submitted successfully!', 'success');
         }
         
         onSuccess();
         onClose();
         formik.resetForm();
-      } catch (err: any) {
-        console.error('Estimation submission error:', err.response?.data);
-        
-        const errorMessage = err.response?.data?.message || 
-                            err.response?.data?.title ||
-                            err.response?.data?.errors ||
-                            err.message || 
-                            'Failed to submit estimation';
-        
-        if (err.response?.data?.errors) {
-          const errors = err.response.data.errors;
+      } catch (error: unknown) {
+        const errorData = getErrorData(error);
+        console.error('Estimation submission error:', errorData);
+
+        if (errorData?.errors) {
+          const errors = errorData.errors;
           const errorList = Object.values(errors).flat().join(', ');
-          alert(`Validation Error: ${errorList}`);
+          notify(`Validation Error: ${errorList}`, 'error');
         } else {
-          alert(`Failed to submit estimation: ${errorMessage}`);
+          notify(`Failed to submit estimation: ${getErrorMessage(error, 'Failed to submit estimation')}`, 'error');
         }
       } finally {
         setSubmitting(false);
       }
     }
   });
-
-  useEffect(() => {
-    if (request && request.plotArea && formik.values.marketRatePerSqm) {
-      const marketRate = parseFloat(formik.values.marketRatePerSqm);
-      if (!isNaN(marketRate)) {
-        const calculatedValue = request.plotArea * marketRate;
-        formik.setFieldValue('estimatedValue', calculatedValue.toFixed(2));
-      }
-    }
-  }, [formik.values.marketRatePerSqm, request]);
 
   if (!request) return null;
 
@@ -582,96 +669,61 @@ LHU Number: ${request.lhuNo}
           </Paper>
           
           <Grid container spacing={3}>
+            <input type="hidden" name="siteVisitDate" value={formik.values.siteVisitDate} />
             <Grid item xs={12} md={6}>
               <TextField
                 fullWidth
                 type="number"
-                label="Market Rate per sqm (ETB) *"
-                name="marketRatePerSqm"
-                value={formik.values.marketRatePerSqm}
-                onChange={formik.handleChange}
-                onBlur={formik.handleBlur}
-                error={formik.touched.marketRatePerSqm && Boolean(formik.errors.marketRatePerSqm)}
-                helperText={formik.touched.marketRatePerSqm ? String(formik.errors.marketRatePerSqm || '') : ''}
-                required
-                InputProps={{ startAdornment: <Typography sx={{ mr: 1 }}>Birr</Typography> }}
-              />
-            </Grid>
-            <Grid item xs={12} md={6}>
-              <TextField
-                fullWidth
-                type="number"
-                label="Estimated Property Value (ETB) *"
+                label="Estimated Property Value (ETB)"
                 name="estimatedValue"
                 value={formik.values.estimatedValue}
                 onChange={formik.handleChange}
                 onBlur={formik.handleBlur}
                 error={formik.touched.estimatedValue && Boolean(formik.errors.estimatedValue)}
-                helperText={formik.touched.estimatedValue ? String(formik.errors.estimatedValue || '') : ''}
-                InputProps={{ readOnly: true, startAdornment: <Typography sx={{ mr: 1 }}>Birr</Typography> }}
+                helperText={formik.touched.estimatedValue ? String(formik.errors.estimatedValue || '') : 'Optional'}
+                InputProps={{ startAdornment: <Typography sx={{ mr: 1 }}>Birr</Typography> }}
               />
             </Grid>
             <Grid item xs={12} md={6}>
-              <TextField
-                fullWidth
-                type="date"
-                label="Site Visit Date *"
-                name="siteVisitDate"
-                value={formik.values.siteVisitDate}
-                onChange={formik.handleChange}
-                onBlur={formik.handleBlur}
-                error={formik.touched.siteVisitDate && Boolean(formik.errors.siteVisitDate)}
-                helperText={formik.touched.siteVisitDate ? String(formik.errors.siteVisitDate || '') : ''}
-                InputLabelProps={{ shrink: true }}
-                required
-              />
+              <Typography variant="body2" sx={{ color: '#64748b', mb: 1 }}>Estimation Excel *</Typography>
+              <Button component="label" variant="outlined" startIcon={reportUploading ? <CircularProgress size={14} /> : <Upload size={14} />} disabled={reportUploading}>
+                Upload Excel
+                <input type="file" hidden onChange={(e) => handleUploadReportFile(e, 'Estimation Excel')} accept=".xlsx,.xls" />
+              </Button>
+              <Typography variant="caption" display="block" sx={{ mt: 1, color: '#475569' }}>
+                {reportAttachments.find(a => a.documentType === 'Estimation Excel')?.fileName || 'No file uploaded'}
+              </Typography>
             </Grid>
             <Grid item xs={12} md={6}>
-              <FormControl fullWidth>
-                <InputLabel>Building Condition</InputLabel>
-                <Select
-                  name="buildingCondition"
-                  value={formik.values.buildingCondition}
-                  onChange={formik.handleChange}
-                  label="Building Condition"
-                >
-                  <MenuItem value="Excellent">Excellent - Like new, premium finishes</MenuItem>
-                  <MenuItem value="Very Good">Very Good - Well maintained, minor wear</MenuItem>
-                  <MenuItem value="Good">Good - Normal wear, functional</MenuItem>
-                  <MenuItem value="Fair">Fair - Needs some repairs</MenuItem>
-                  <MenuItem value="Poor">Poor - Major repairs needed</MenuItem>
-                </Select>
-              </FormControl>
+              <Typography variant="body2" sx={{ color: '#64748b', mb: 1 }}>Relevant Photo *</Typography>
+              <Button component="label" variant="outlined" startIcon={reportUploading ? <CircularProgress size={14} /> : <Upload size={14} />} disabled={reportUploading}>
+                Upload Photo
+                <input type="file" hidden onChange={(e) => handleUploadReportFile(e, 'Relevant Photo')} accept=".jpg,.jpeg,.png" />
+              </Button>
+              <Typography variant="caption" display="block" sx={{ mt: 1, color: '#475569' }}>
+                {reportAttachments.find(a => a.documentType === 'Relevant Photo')?.fileName || 'No file uploaded'}
+              </Typography>
             </Grid>
+            <Grid item xs={12} md={6}>
+              <Typography variant="body2" sx={{ color: '#64748b', mb: 1 }}>Estimation Report *</Typography>
+              <Button component="label" variant="outlined" startIcon={reportUploading ? <CircularProgress size={14} /> : <Upload size={14} />} disabled={reportUploading}>
+                Upload Report
+                <input type="file" hidden onChange={(e) => handleUploadReportFile(e, 'Estimation Report')} accept=".pdf,.doc,.docx" />
+              </Button>
+              <Typography variant="caption" display="block" sx={{ mt: 1, color: '#475569' }}>
+                {reportAttachments.find(a => a.documentType === 'Estimation Report')?.fileName || 'No file uploaded'}
+              </Typography>
+            </Grid>
+            {(reportUploadError || (formik.errors.attachments && formik.submitCount > 0)) && (
+              <Grid item xs={12}>
+                <Alert severity="error">{formik.errors.attachments || reportUploadError}</Alert>
+              </Grid>
+            )}
             <Grid item xs={12}>
               <TextField
                 fullWidth
                 multiline
                 rows={3}
-                label="Valuation Notes & Recommendations"
-                name="recommendations"
-                value={formik.values.recommendations}
-                onChange={formik.handleChange}
-                placeholder="Include any special considerations, market trends, or recommendations..."
-              />
-            </Grid>
-            <Grid item xs={12}>
-              <TextField
-                fullWidth
-                multiline
-                rows={2}
-                label="Additional Notes"
-                name="notes"
-                value={formik.values.notes}
-                onChange={formik.handleChange}
-                placeholder="Any other relevant information..."
-              />
-            </Grid>
-            <Grid item xs={12}>
-              <TextField
-                fullWidth
-                multiline
-                rows={2}
                 label="Remarks *"
                 name="remarks"
                 value={formik.values.remarks}
@@ -700,7 +752,23 @@ LHU Number: ${request.lhuNo}
 // Location Selectors
 // =================================================================
 
-const EthiopianLocationSelectors = ({ formik }: { formik: any }) => {
+interface EthiopianLocationSelectorsProps {
+  formik: FormikProps<{
+    region: string;
+    cityId: string;
+    subCityId: string;
+    kebeleName: string;
+    city: string;
+    subCity: string;
+    kebele: string;
+    plotArea: string;
+    buildingType: string;
+    purpose: string;
+    type: string;
+  }>;
+}
+
+const EthiopianLocationSelectors = ({ formik }: EthiopianLocationSelectorsProps) => {
   const [regions, setRegions] = useState<EthiopianRegion[]>([]);
   const [cities, setCities] = useState<EthiopianCity[]>([]);
   const [subCities, setSubCities] = useState<EthiopianSubCity[]>([]);
@@ -708,8 +776,8 @@ const EthiopianLocationSelectors = ({ formik }: { formik: any }) => {
 
   useEffect(() => { fetchEthiopianLocations().then(setRegions); }, []);
 
-  const handleRegion = (e: any) => {
-    const id = e.target.value;
+  const handleRegion = (e: SelectChangeEvent<string> | React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const id = e.target.value as string;
     formik.setFieldValue('region', id);
     formik.setFieldValue('cityId', ''); formik.setFieldValue('subCityId', ''); formik.setFieldValue('kebeleName', '');
     formik.setFieldValue('city', ''); formik.setFieldValue('subCity', ''); formik.setFieldValue('kebele', '');
@@ -717,24 +785,24 @@ const EthiopianLocationSelectors = ({ formik }: { formik: any }) => {
     setCities(r?.cities || []); setSubCities([]); setKebeles([]);
   };
 
-  const handleCity = (e: any) => {
-    const id = e.target.value;
+  const handleCity = (e: SelectChangeEvent<string> | React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const id = e.target.value as string;
     formik.setFieldValue('cityId', id); formik.setFieldValue('subCityId', ''); formik.setFieldValue('kebeleName', '');
     const c = cities.find(x => x.id === id);
     formik.setFieldValue('city', c?.name || '');
     setSubCities(c?.subCities || []); setKebeles([]);
   };
 
-  const handleSubCity = (e: any) => {
-    const id = e.target.value;
+  const handleSubCity = (e: SelectChangeEvent<string> | React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const id = e.target.value as string;
     formik.setFieldValue('subCityId', id); formik.setFieldValue('kebeleName', '');
     const s = subCities.find(x => x.id === id);
     formik.setFieldValue('subCity', s?.name || '');
     setKebeles(s?.kebeles || []);
   };
 
-  const handleKebele = (e: any) => {
-    const val = e.target.value;
+  const handleKebele = (e: SelectChangeEvent<string> | React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const val = e.target.value as string;
     formik.setFieldValue('kebeleName', val);
     formik.setFieldValue('kebele', val);
   };
@@ -1005,7 +1073,7 @@ const AnimatedRecommendationCard = ({
 // =================================================================
 
 export default function RequestsPage() {
-  const { user } = useAuthStore();
+  const { user, notify } = useAuthStore();
   const { hasPermission, canCreateRequest, canEditRequest, canApproveRequest, canManagerApprove, canRejectRequest, canManagerReject, canAssignRequest, canManageWorkload, canEstimateRequest, canEditEstimation } = usePermissions();
   const router = useRouter();
 
@@ -1018,7 +1086,7 @@ export default function RequestsPage() {
   const [estimationDialogOpen, setEstimationDialogOpen] = useState(false);
   const [viewDetailsDialogOpen, setViewDetailsDialogOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
-  const [existingReportData, setExistingReportData] = useState<any>(null);
+  const [existingReportData, setExistingReportData] = useState<EstimationRequest['report'] | null>(null);
   const [openDialog, setOpenDialog] = useState(false);
   const [openConfirm, setOpenConfirm] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -1037,7 +1105,7 @@ export default function RequestsPage() {
   const [reassignDialogOpen, setReassignDialogOpen] = useState(false);
   const [requestToReassign, setRequestToReassign] = useState<EstimationRequest | null>(null);
   const [selectedNewOfficerId, setSelectedNewOfficerId] = useState<string>('');
-  const requiredDocumentTypes = ['ID Card', 'Land Deed', 'Floor Plan'];
+  const requiredDocumentTypes = ['Estimation Fee', 'Land Deed', 'Floor Plan'];
 
   // =================================================================
   // Data Fetching Functions
@@ -1064,8 +1132,8 @@ export default function RequestsPage() {
       setPendingRequests(pending);
       
       return requestsWithDetails || [];
-    } catch (err: any) {
-      console.error('[FetchData Error]', err.message);
+    } catch (error: unknown) {
+      console.error('[FetchData Error]', getErrorMessage(error));
       return [];
     } finally {
       setLoading(false);
@@ -1074,25 +1142,26 @@ export default function RequestsPage() {
 
   const fetchOfficers = useCallback(async () => {
     try {
-      const result = await api.get<any>('/UserManagement/engineering-officers', { silent: true });
+      const result = await api.get<unknown>('/UserManagement/engineering-officers', { silent: true });
       
-      let officersArray: any[] = [];
+      let officersArray: OfficerApiRecord[] = [];
+      const resultObj = result as Record<string, unknown>;
       
       if (result && Array.isArray(result)) {
-        officersArray = result;
-      } else if (result && typeof result === 'object' && 'data' in result && Array.isArray((result as any).data)) {
-        officersArray = (result as any).data;
-      } else if (result && typeof result === 'object' && 'items' in result && Array.isArray((result as any).items)) {
-        officersArray = (result as any).items;
-      } else if (result && typeof result === 'object' && '$values' in result && Array.isArray((result as any).$values)) {
-        officersArray = (result as any).$values;
-      } else if (result && typeof result === 'object' && 'result' in result && Array.isArray((result as any).result)) {
-        officersArray = (result as any).result;
+        officersArray = result as OfficerApiRecord[];
+      } else if (result && typeof result === 'object' && 'data' in result && Array.isArray(resultObj.data)) {
+        officersArray = resultObj.data as OfficerApiRecord[];
+      } else if (result && typeof result === 'object' && 'items' in result && Array.isArray(resultObj.items)) {
+        officersArray = resultObj.items as OfficerApiRecord[];
+      } else if (result && typeof result === 'object' && '$values' in result && Array.isArray(resultObj.$values)) {
+        officersArray = resultObj.$values as OfficerApiRecord[];
+      } else if (result && typeof result === 'object' && 'result' in result && Array.isArray(resultObj.result)) {
+        officersArray = resultObj.result as OfficerApiRecord[];
       }
       
       const allRequests = await fetchData();
       
-      const mappedOfficers = officersArray.map((officer: any, idx: number) => {
+      const mappedOfficers = officersArray.map((officer, idx: number) => {
         const firstName = officer.firstName || officer.FirstName || '';
         const lastName = officer.lastName || officer.LastName || '';
         const fullName = `${firstName} ${lastName}`.trim();
@@ -1123,8 +1192,8 @@ export default function RequestsPage() {
         setEngOfficers([]);
       }
       
-    } catch (err: any) {
-      console.error('Error fetching officers:', err.message);
+    } catch (error: unknown) {
+      console.error('Error fetching officers:', getErrorMessage(error));
       setEngOfficers([]);
     }
   }, [fetchData]);
@@ -1260,16 +1329,16 @@ export default function RequestsPage() {
         setManageRequestsForOfficer({ ...manageRequestsForOfficer, assignedRequests: updatedAssignments });
       }
       
-      alert(`Successfully assigned ${requestIds.length} request(s)`);
+      notify(`Successfully assigned ${requestIds.length} request(s)`, 'success');
       return true;
-    } catch (err: any) {
-      console.error('Assignment error:', err);
-      alert(`Assignment failed: ${err.response?.data?.message || err.message}`);
-      throw err;
+    } catch (error: unknown) {
+      console.error('Assignment error:', getErrorMessage(error));
+      notify(`Assignment failed: ${getErrorMessage(error)}`, 'error');
+      throw error;
     } finally {
       setAssigning(false);
     }
-  }, [fetchData, fetchOfficers, engOfficers, getRequestsByOfficer, manageRequestsForOfficer]);
+  }, [fetchData, fetchOfficers, engOfficers, getRequestsByOfficer, manageRequestsForOfficer, notify]);
 
   const removeAssignment = useCallback(async (requestId: number) => {
     if (!confirm('Remove this assignment? The request will be available for reassignment.')) return;
@@ -1278,7 +1347,7 @@ export default function RequestsPage() {
       setAssigning(true);
       try {
         await api.post(`/EstimationRequests/${requestId}/unassign`, {});
-      } catch (err: any) {
+      } catch {
         await api.delete(`/EstimationRequests/${requestId}/assignment`);
       }
       
@@ -1305,12 +1374,12 @@ export default function RequestsPage() {
         setEngOfficers(updatedOfficers);
       }
       
-      alert('Assignment removed successfully');
+      notify('Assignment removed successfully', 'success');
       return true;
-    } catch (err: any) {
-      console.error('Error removing assignment:', err);
-      alert(`Failed to remove assignment: ${err.response?.data?.message || err.message}`);
-      throw err;
+    } catch (error: unknown) {
+      console.error('Error removing assignment:', getErrorMessage(error));
+      notify(`Failed to remove assignment: ${getErrorMessage(error)}`, 'error');
+      throw error;
     } finally {
       setAssigning(false);
     }
@@ -1318,7 +1387,7 @@ export default function RequestsPage() {
 
   const handleReassignRequest = useCallback(async (requestId: number, newOfficerId: string) => {
     if (!newOfficerId) {
-      alert('Please select an engineer');
+      notify('Please select an engineer', 'warning');
       return;
     }
     
@@ -1370,13 +1439,13 @@ export default function RequestsPage() {
       }));
       setEngOfficers(updatedOfficers);
       
-      alert(`Request #${requestId} reassigned successfully`);
+      notify(`Request #${requestId} reassigned successfully`, 'success');
       setReassignDialogOpen(false);
       setRequestToReassign(null);
       setSelectedNewOfficerId('');
-    } catch (err: any) {
-      console.error('Error reassigning request:', err);
-      alert(`Failed to reassign: ${err.response?.data?.message || err.message}`);
+    } catch (error: unknown) {
+      console.error('Error reassigning request:', getErrorMessage(error));
+      notify(`Failed to reassign: ${getErrorMessage(error)}`, 'error');
     } finally {
       setAssigning(false);
     }
@@ -1424,7 +1493,7 @@ export default function RequestsPage() {
   const handleMenuOpen = (e: React.MouseEvent<HTMLElement>, row: EstimationRequest) => { setAnchorEl(e.currentTarget); setSelectedRow(row); };
   const handleMenuClose = () => { setAnchorEl(null); };
   const handleOpenForm = () => { setOpenDialog(true); setSubmitError(null); setLhuError(null); };
-  const handleCloseForm = () => { setOpenDialog(false); formik.resetForm(); setAttachments([]); setSubmitError(null); };
+  let handleCloseForm = () => { setOpenDialog(false); setAttachments([]); setSubmitError(null); };
   const handleConfirmAssignment = async () => {
     if (!selectedOfficerId || !selectedRow) return;
     await batchAssign(selectedOfficerId, [selectedRow.id]);
@@ -1442,15 +1511,11 @@ export default function RequestsPage() {
   // File Upload Functions
   // =================================================================
 
-  const getMissingDocumentTypes = useCallback(() => {
-    return requiredDocumentTypes.filter(type => !attachments.some(file => file.documentType === type));
-  }, [attachments]);
-
   const uploadFile = async (e: React.ChangeEvent<HTMLInputElement>, type: string) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      setSubmitError(`${type} is too large. Please upload a file that is 5 MB or smaller.`);
+    if (file.size > 10 * 1024 * 1024) {
+      setSubmitError(`${type} is too large. Please upload a file that is 10 MB or smaller.`);
       e.target.value = '';
       return;
     }
@@ -1498,6 +1563,8 @@ export default function RequestsPage() {
         plotArea: Number(formik.values.plotArea),
         buildingType: formik.values.buildingType,
         purpose: formik.values.purpose,
+        projectFinanceDocType: formik.values.projectFinanceDocType,
+        billOfPenalty: formik.values.billOfPenalty,
         type: formik.values.type,
         attachments: attachments.map(a => ({ fileName: a.fileName, filePath: a.fileUrl, documentType: a.documentType })),
         branchUserId: user?.id,
@@ -1507,12 +1574,13 @@ export default function RequestsPage() {
       setAttachments([]);
       await fetchData();
       handleCloseForm();
-    } catch (err: any) {
-      console.error('Submit error:', err.response?.data);
-      if (err.response?.data?.message?.toLowerCase().includes('lhu') || err.response?.data?.errors?.lhuNo) {
+    } catch (error: unknown) {
+      const errorData = getErrorData(error);
+      console.error('Submit error:', errorData);
+      if (errorData?.message?.toLowerCase().includes('lhu') || (typeof errorData?.errors === 'object' && errorData.errors !== null && 'lhuNo' in errorData.errors)) {
         setSubmitError('LHU number already exists. Please enter a unique LHU number.');
       } else {
-        setSubmitError(err.response?.data?.message || 'Submission failed');
+        setSubmitError(errorData?.message || 'Submission failed');
       }
     }
   };
@@ -1532,11 +1600,16 @@ export default function RequestsPage() {
     plotArea: Yup.number().required('Required').positive(),
     buildingType: Yup.string().required('Required'),
     purpose: Yup.string().required('Required'),
+    projectFinanceDocType: Yup.string().when('purpose', (value: unknown, schema) => {
+      const purposeValue = Array.isArray(value) ? value[0] : value;
+      return purposeValue === 'Project Finance' ? schema.required('Required') : schema;
+    }),
+    billOfPenalty: Yup.boolean(),
     type: Yup.string().required('Required'),
   });
 
-  const formik = useFormik({
-    initialValues: { applicantName: '', ownerName: '', lhuNo: '', region: '', cityId: '', subCityId: '', kebeleName: '', city: '', subCity: '', kebele: '', plotArea: '', buildingType: '', purpose: '', type: '' },
+  const formik = useFormik<RequestFormValues>({
+    initialValues: { applicantName: '', ownerName: '', lhuNo: '', region: '', cityId: '', subCityId: '', kebeleName: '', city: '', subCity: '', kebele: '', plotArea: '', buildingType: '', purpose: '', projectFinanceDocType: '', billOfPenalty: false, type: '' },
     validationSchema: schema,
     onSubmit: () => {
       const missingDocuments = getMissingDocumentTypes();
@@ -1547,6 +1620,16 @@ export default function RequestsPage() {
       }
     },
   });
+
+  handleCloseForm = () => { setOpenDialog(false); formik.resetForm(); setAttachments([]); setSubmitError(null); };
+
+  const getMissingDocumentTypes = () => {
+    const required = [...requiredDocumentTypes];
+    if (formik.values.purpose === 'Project Finance') {
+      required.push('Construction Permit');
+    }
+    return required.filter(type => !attachments.some(file => file.documentType === type));
+  };
 
   const workflowFormik = useFormik({
     initialValues: { description: '', reason: '', officerId: '' },
@@ -1582,9 +1665,14 @@ export default function RequestsPage() {
         
         setWorkflowAction(null);
         workflowFormik.resetForm();
-        await fetchData();
-      } catch (err: any) {
-        alert(err.response?.data?.message || err.message || "The operation failed");
+        const updatedRequests = await fetchData();
+        const refreshedRow = updatedRequests.find(r => r.id === selectedRow.id);
+        if (refreshedRow) {
+          setSelectedRow(refreshedRow);
+        }
+        setAnchorEl(null);
+      } catch (error: unknown) {
+        notify(getErrorMessage(error, 'The operation failed'), 'error');
       } finally {
         setLoading(false);
       }
@@ -2046,7 +2134,7 @@ export default function RequestsPage() {
 
             <Paper sx={{ p: 2, mb: 2.5, bgcolor: 'white', border: '1px solid #e2e8f0' }}>
               <Typography variant="subtitle2" fontWeight="700" sx={{ color: '#064E3B', mb: 2 }}>Property Location</Typography>
-              <EthiopianLocationSelectors formik={formik} />
+              <EthiopianLocationSelectors formik={formik as unknown as FormikProps<{ region: string; cityId: string; subCityId: string; kebeleName: string; city: string; subCity: string; kebele: string; plotArea: string; buildingType: string; purpose: string; type: string; }>} />
             </Paper>
 
             <Paper sx={{ p: 2, mb: 2.5, bgcolor: 'white', border: '1px solid #e2e8f0' }}>
@@ -2079,6 +2167,7 @@ export default function RequestsPage() {
                       <MenuItem value="Guarantee">Guarantee</MenuItem>
                       <MenuItem value="Loan">Loan</MenuItem>
                       <MenuItem value="Foreclosure">Foreclosure</MenuItem>
+                      <MenuItem value="Project Finance">Project Finance</MenuItem>
                     </Select>
                   </FormControl>
                 </Box>
@@ -2092,12 +2181,44 @@ export default function RequestsPage() {
                   </FormControl>
                 </Box>
               </Box>
+              {formik.values.purpose === 'Project Finance' && (
+                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(260px, 1fr))' }, gap: 3, mt: 3 }}>
+                  <Box sx={{ minWidth: 0, width: '100%' }}>
+                    <FormControl fullWidth required sx={requestSelectSx}>
+                      <InputLabel>Project Finance Document</InputLabel>
+                      <Select name="projectFinanceDocType" value={formik.values.projectFinanceDocType} onChange={formik.handleChange} label="Project Finance Document">
+                        <MenuItem value="Construction Permit">Construction Permit</MenuItem>
+                      </Select>
+                      {formik.touched.projectFinanceDocType && formik.errors.projectFinanceDocType && (
+                        <FormHelperText error>{formik.errors.projectFinanceDocType}</FormHelperText>
+                      )}
+                    </FormControl>
+                  </Box>
+
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', minWidth: 0, width: '100%' }}>
+                    <FormControlLabel
+                      control={<Checkbox name="billOfPenalty" checked={formik.values.billOfPenalty} onChange={formik.handleChange} />}
+                      label="Bill of Penalty"
+                    />
+                  </Box>
+
+                  {formik.values.projectFinanceDocType === 'Construction Permit' && (
+                    <Box sx={{ minWidth: 0, width: '100%' }}>
+                      <Typography variant="subtitle2" sx={{ mb: 1, color: '#064E3B', fontWeight: 700 }}>Construction Permit</Typography>
+                      <Button component="label" variant="outlined" size="small" startIcon={uploading ? <CircularProgress size={14} /> : <Upload size={14} />} disabled={uploading}>
+                        Upload Construction Permit
+                        <input type="file" hidden onChange={(e) => uploadFile(e, 'Construction Permit')} accept=".pdf,.jpg,.jpeg,.png" />
+                      </Button>
+                    </Box>
+                  )}
+                </Box>
+              )}
             </Paper>
 
             <Paper sx={{ p: 2, bgcolor: 'white', border: '1px solid #e2e8f0' }}>
               <Typography variant="subtitle2" fontWeight="700" sx={{ color: '#064E3B', mb: 2 }}>Supporting Documents</Typography>
               <Box display="flex" gap={1.5} flexWrap="wrap" mb={2}>
-                <Button component="label" variant="outlined" size="small" startIcon={uploading ? <CircularProgress size={14} /> : <Upload size={14} />} disabled={uploading}>ID Card<input type="file" hidden onChange={(e) => uploadFile(e, 'ID Card')} accept=".pdf,.jpg,.jpeg,.png" /></Button>
+                <Button component="label" variant="outlined" size="small" startIcon={uploading ? <CircularProgress size={14} /> : <Upload size={14} />} disabled={uploading}>Estimation Fee<input type="file" hidden onChange={(e) => uploadFile(e, 'Estimation Fee')} accept=".pdf,.jpg,.jpeg,.png" /></Button>
                 <Button component="label" variant="outlined" size="small" startIcon={uploading ? <CircularProgress size={14} /> : <Upload size={14} />} disabled={uploading}>Land Deed<input type="file" hidden onChange={(e) => uploadFile(e, 'Land Deed')} accept=".pdf,.jpg,.jpeg,.png" /></Button>
                 <Button component="label" variant="outlined" size="small" startIcon={uploading ? <CircularProgress size={14} /> : <Upload size={14} />} disabled={uploading}>Floor Plan<input type="file" hidden onChange={(e) => uploadFile(e, 'Floor Plan')} accept=".pdf,.jpg,.jpeg,.png" /></Button>
               </Box>
@@ -2109,8 +2230,8 @@ export default function RequestsPage() {
               ))}
               <Typography variant="caption" sx={{ color: getMissingDocumentTypes().length > 0 ? '#dc2626' : '#059669', display: 'block', mt: 1 }}>
                 {getMissingDocumentTypes().length > 0
-                  ? `Required: upload ${getMissingDocumentTypes().join(', ')}. Each file must be 5 MB or smaller.`
-                  : 'All required documents uploaded. Each file must be 5 MB or smaller.'}
+                  ? `Required: upload ${getMissingDocumentTypes().join(', ')}. Each file must be 10 MB or smaller.`
+                  : 'All required documents uploaded. Each file must be 10 MB or smaller.'}
               </Typography>
             </Paper>
           </DialogContent>

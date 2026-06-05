@@ -18,6 +18,7 @@ namespace backend.Services
 
         // Keeps report logic insulated
         Task<(bool Succeeded, string? ErrorMessage)> PrepareReportAsync(int id, EngineeringReport report, string userId);
+        Task<(bool Succeeded, string? ErrorMessage)> PrepareReportAsync(int id, CreateEngineeringReportDto reportDto, string userId);
 
         // Updates status using the DTO/Enum layer
         Task<bool> UpdateStatusAsync(int id, RequestStatus newStatus);

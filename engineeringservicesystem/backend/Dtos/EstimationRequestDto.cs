@@ -33,6 +33,10 @@ namespace backend.DTOs
         public List<AttachmentDto> Attachments { get; set; } = new();
         public int? ReportId { get; set; }
 
+        // Project Finance fields
+        public string? ProjectFinanceDocType { get; set; }
+        public bool? BillOfPenalty { get; set; }
+
         public string? AssignedEngineerId { get; set; }
         public string? AssignedEngineerName { get; set; }
         public DateTime? EngineerAssignmentDate { get; set; }
@@ -71,6 +75,9 @@ namespace backend.DTOs
         public string? BranchUserId { get; set; }
         
         public List<AttachmentUploadDto> Attachments { get; set; } = new();
+        // Project Finance fields (optional)
+        public string? ProjectFinanceDocType { get; set; }
+        public bool? BillOfPenalty { get; set; }
     }
 
     public class UpdateEstimationRequestDto
