@@ -6,14 +6,15 @@ public static class Permissions
 {
     // Dashboard
     public const string DashboardView = "Permissions.Dashboard.View";
-    
+
     // Request Views (Granular)
     public const string RequestsView = "Permissions.Requests.View";
     public const string RequestsViewOwn = "Permissions.Requests.ViewOwn";
     public const string RequestsViewBranch = "Permissions.Requests.ViewBranch";
     public const string RequestsViewAll = "Permissions.Requests.ViewAll";
     public const string RequestsViewAssigned = "Permissions.Requests.ViewAssigned";
-    
+    public const string RequestsViewAllAssigned = "Permissions.Requests.ViewAllAssigned";
+
     // Request Actions
     public const string RequestsCreate = "Permissions.Requests.Create";
     public const string RequestsEdit = "Permissions.Requests.Edit";
@@ -46,6 +47,7 @@ public static class Permissions
             RequestsViewBranch,
             RequestsViewAll,
             RequestsViewAssigned,
+            RequestsViewAllAssigned,
             RequestsCreate,
             RequestsEdit,
             RequestsDelete,

@@ -8,7 +8,7 @@ namespace backend.Services
     public interface IEstimationRequestsService
     {
         // Returns clean response items instead of database models
-        Task<IEnumerable<EstimationRequestResponseDto>> GetRequestsAsync(string userId, string? userRole);
+        Task<IEnumerable<EstimationRequestResponseDto>> GetRequestsAsync(string userId, List<string> userPermissions);
 
         // Returns a clean response item or null
         Task<EstimationRequestResponseDto?> GetRequestByIdAsync(int id);

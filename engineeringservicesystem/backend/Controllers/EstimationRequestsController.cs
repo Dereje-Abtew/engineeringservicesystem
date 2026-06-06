@@ -29,14 +29,18 @@ namespace backend.Controllers
         public async Task<ActionResult<IEnumerable<EstimationRequestResponseDto>>> GetEstimationRequests()
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            var userRole = User.FindFirstValue(ClaimTypes.Role);
 
             if (string.IsNullOrEmpty(userId))
             {
                 return Unauthorized();
             }
 
-            var requests = await _requestsService.GetRequestsAsync(userId, userRole);
+            var userPermissions = User.FindAll("Permission")
+                .Concat(User.FindAll("http://schemas.microsoft.com/ws/2008/06/identity/claims/permission"))
+                .Select(c => c.Value)
+                .ToList();
+
+            var requests = await _requestsService.GetRequestsAsync(userId, userPermissions);
             return Ok(requests);
         }
 

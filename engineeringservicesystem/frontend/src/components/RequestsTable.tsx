@@ -61,6 +61,7 @@ export default function RequestsTable({
     const canViewOwn = hasPermission('Permissions.Requests.ViewOwn');
     const canViewBranch = hasPermission('Permissions.Requests.ViewBranch');
     const canViewAll = hasPermission('Permissions.Requests.ViewAll');
+    const canViewAllAssigned = hasPermission('Permissions.Requests.ViewAllAssigned');
     const canViewAssigned = hasPermission('Permissions.Requests.ViewAssigned');
 
     return data.filter((request) => {
@@ -68,22 +69,27 @@ export default function RequestsTable({
       if (canViewAll) {
         return request.status !== 0;
       }
-      
+
       // Branch user with ViewBranch - see all requests from their branch
       if (canViewBranch && request.branchId === currentBranchId) {
         return true;
       }
-      
+
+      // Lead Engineer with ViewAllAssigned - see all assigned requests from any engineer
+      if (canViewAllAssigned && request.assignedEngineerId !== null) {
+        return true;
+      }
+
       // Engineering Officer with ViewAssigned - see only assigned requests
       if (canViewAssigned && request.assignedEngineerId === currentUserId) {
         return true;
       }
-      
+
       // Regular user with ViewOwn - see only their own requests
       if (canViewOwn && request.branchUserId === currentUserId) {
         return true;
       }
-      
+
       return false;
     });
   }, [data, hasPermission, currentUserId, currentBranchId]);

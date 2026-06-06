@@ -14,7 +14,7 @@ namespace backend.Data
         public static async Task Initialize(ApplicationDbContext context, UserManager<ApplicationUser> userManager, RoleManager<IdentityRole> roleManager)
         {
             // Create roles
-            string[] roleNames = { "Admin", "Maker", "Checker", "EngineeringOfficer" };
+            string[] roleNames = { "Admin", "Maker", "Checker", "Manager", "EngineeringOfficer" };
             foreach (var roleName in roleNames)
             {
                 var roleExist = await roleManager.RoleExistsAsync(roleName);
@@ -45,19 +45,30 @@ namespace backend.Data
                 {
                     permissionsToAssign.Add(Permissions.DashboardView);
                     permissionsToAssign.Add(Permissions.RequestsView);
+                    permissionsToAssign.Add(Permissions.RequestsViewBranch);
                     permissionsToAssign.Add(Permissions.RequestsApprove);
                 }
                 else if (roleName == "Maker")
                 {
                     permissionsToAssign.Add(Permissions.DashboardView);
                     permissionsToAssign.Add(Permissions.RequestsView);
+                    permissionsToAssign.Add(Permissions.RequestsViewOwn);
                     permissionsToAssign.Add(Permissions.RequestsCreate);
+                }
+                else if (roleName == "Manager")
+                {
+                    permissionsToAssign.Add(Permissions.DashboardView);
+                    permissionsToAssign.Add(Permissions.RequestsView);
+                    permissionsToAssign.Add(Permissions.RequestsViewAll);
+                    permissionsToAssign.Add(Permissions.RequestsApprove);
                 }
                 else if (roleName == "EngineeringOfficer")
                 {
                     permissionsToAssign.Add(Permissions.DashboardView);
                     permissionsToAssign.Add(Permissions.RequestsView);
+                    permissionsToAssign.Add(Permissions.RequestsViewAssigned);
                     permissionsToAssign.Add(Permissions.RequestsEdit);
+                    permissionsToAssign.Add(Permissions.RequestsEstimate);
                 }
 
                 foreach (var perm in permissionsToAssign)

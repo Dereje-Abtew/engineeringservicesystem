@@ -1,6 +1,7 @@
 using backend.Data;
 using backend.DTOs;
 using backend.Models;
+using backend.Constants;
 using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
@@ -18,7 +19,7 @@ namespace backend.Services
             _context = context;
         }
 
-        public async Task<IEnumerable<EstimationRequestResponseDto>> GetRequestsAsync(string userId, string? userRole)
+        public async Task<IEnumerable<EstimationRequestResponseDto>> GetRequestsAsync(string userId, List<string> userPermissions)
         {
             var query = _context.EstimationRequests
                 .Include(e => e.BranchUser)
@@ -27,13 +28,14 @@ namespace backend.Services
                 .Include(e => e.AssignedEngineer)
                 .AsQueryable();
 
-            // Role-based filtering - FULL VISIBILITY for follow-up
-            if (userRole == "Maker")
+            // Permission-based filtering - Dynamic and role-agnostic
+            if (userPermissions.Contains(Permissions.RequestsViewAll))
             {
-                query = query.Where(e => e.BranchUserId == userId);
+                // Show all requests - no filter needed
             }
-            else if (userRole == "Checker")
+            else if (userPermissions.Contains(Permissions.RequestsViewBranch))
             {
+                // Show only requests from user's branch (Checker)
                 var checkerUser = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId);
                 if (checkerUser != null && checkerUser.BranchId.HasValue)
                 {
@@ -45,12 +47,19 @@ namespace backend.Services
                     query = query.Where(e => e.BranchUserId == userId);
                 }
             }
-            else if (userRole == "Manager")
+            else if (userPermissions.Contains(Permissions.RequestsViewOwn))
             {
-                query = query.Where(e => e.Status != RequestStatus.Pending);
+                // Show only user's own requests (Maker)
+                query = query.Where(e => e.BranchUserId == userId);
             }
-            else if (userRole == "EngineeringOfficer")
+            else if (userPermissions.Contains(Permissions.RequestsViewAllAssigned))
             {
+                // Show ALL assigned requests to ANY engineer
+                query = query.Where(e => e.AssignedEngineerId != null);
+            }
+            else if (userPermissions.Contains(Permissions.RequestsViewAssigned))
+            {
+                // Show only MY assigned requests
                 query = query.Where(e => e.AssignedEngineerId == userId);
             }
 
@@ -277,7 +286,7 @@ namespace backend.Services
             if (estimationRequest.AssignedEngineerId != userId)
                 return (false, "You are not assigned to this request");
 
-            if (estimationRequest.Status != RequestStatus.AssignedToEngineer && 
+            if (estimationRequest.Status != RequestStatus.AssignedToEngineer &&
                 estimationRequest.Status != RequestStatus.Estimated)
                 return (false, "Request must be in assigned or estimated status");
 

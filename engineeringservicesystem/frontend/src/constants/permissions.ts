@@ -17,7 +17,8 @@ export const Permissions = {
     RequestsViewBranch: "Permissions.Requests.ViewBranch",
     RequestsViewAll: "Permissions.Requests.ViewAll",
     RequestsViewAssigned: "Permissions.Requests.ViewAssigned",
-    
+    RequestsViewAllAssigned: "Permissions.Requests.ViewAllAssigned",
+
     // Request Actions
     RequestsCreate: "Permissions.Requests.Create",
     RequestsEdit: "Permissions.Requests.Edit",
