@@ -8,18 +8,24 @@ namespace backend.Services
 {
     public class AttachmentsService : IAttachmentsService
     {
-        public async Task<(bool IsSuccess, string? ErrorMessage, AttachmentUploadResultDto? Result)> UploadAttachmentAsync(IFormFile file)
+        public async Task<(bool IsSuccess, string? ErrorMessage, AttachmentUploadResultDto? Result)> UploadAttachmentAsync(IFormFile file, string? documentType = null)
         {
             if (file == null || file.Length == 0)
             {
                 return (false, "No file was uploaded.", null);
             }
 
-            var allowedExtensions = new[] { ".pdf", ".jpg", ".jpeg", ".png", ".doc", ".docx" };
             var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
+            var allowedExtensions = documentType == "Relevant Photo"
+                ? new[] { ".pdf", ".doc", ".docx" }
+                : new[] { ".pdf", ".jpg", ".jpeg", ".png", ".doc", ".docx", ".xlsx", ".xls", ".csv" };
+
             if (!allowedExtensions.Contains(extension))
             {
-                return (false, $"File type '{extension}' is not allowed.", null);
+                var errorMsg = documentType == "Relevant Photo"
+                    ? "Please convert your photo to PDF format. Allowed formats: PDF, DOC, DOCX."
+                    : $"File type '{extension}' is not allowed.";
+                return (false, errorMsg, null);
             }
 
             if (file.Length > 10 * 1024 * 1024)

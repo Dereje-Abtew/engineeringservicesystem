@@ -695,10 +695,10 @@ LHU Number: ${request.lhuNo}
               </Typography>
             </Grid>
             <Grid item xs={12} md={6}>
-              <Typography variant="body2" sx={{ color: '#64748b', mb: 1 }}>Relevant Photo *</Typography>
+              <Typography variant="body2" sx={{ color: '#64748b', mb: 1 }}>Relevant Photo PDF *</Typography>
               <Button component="label" variant="outlined" startIcon={reportUploading ? <CircularProgress size={14} /> : <Upload size={14} />} disabled={reportUploading}>
-                Upload Photo
-                <input type="file" hidden onChange={(e) => handleUploadReportFile(e, 'Relevant Photo')} accept=".jpg,.jpeg,.png" />
+                Upload PDF
+                <input type="file" hidden onChange={(e) => handleUploadReportFile(e, 'Relevant Photo')} accept=".pdf,.doc,.docx" />
               </Button>
               <Typography variant="caption" display="block" sx={{ mt: 1, color: '#475569' }}>
                 {reportAttachments.find(a => a.documentType === 'Relevant Photo')?.fileName || 'No file uploaded'}

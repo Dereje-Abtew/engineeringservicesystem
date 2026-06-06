@@ -20,13 +20,13 @@ namespace backend.Controllers
         }
 
         [HttpPost("upload")]
-        [Authorize(Policy = Permissions.RequestsCreate)]
+        // [Authorize(Policy = Permissions.RequestsCreate)]
         [ProducesResponseType(StatusCodes.Status200OK, Type = typeof(AttachmentUploadResultDto))]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        public async Task<IActionResult> Upload(IFormFile file)
+        public async Task<IActionResult> Upload(IFormFile file, string? documentType = null)
         {
-            var (isSuccess, errorMessage, result) = await _attachmentsService.UploadAttachmentAsync(file);
-            
+            var (isSuccess, errorMessage, result) = await _attachmentsService.UploadAttachmentAsync(file, documentType);
+
             if (!isSuccess)
             {
                 return BadRequest(new { message = errorMessage });

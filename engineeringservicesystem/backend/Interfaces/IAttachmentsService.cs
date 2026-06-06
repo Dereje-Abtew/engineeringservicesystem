@@ -5,7 +5,7 @@ namespace backend.Services
 {
     public interface IAttachmentsService
     {
-        Task<(bool IsSuccess, string? ErrorMessage, AttachmentUploadResultDto? Result)> UploadAttachmentAsync(IFormFile file);
+        Task<(bool IsSuccess, string? ErrorMessage, AttachmentUploadResultDto? Result)> UploadAttachmentAsync(IFormFile file, string? documentType = null);
     }
 
     // --- Strongly Typed Response DTO for API Stability ---
