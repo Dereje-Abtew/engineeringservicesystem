@@ -454,7 +454,7 @@ const ViewDetailsDialog = ({ open, onClose, request }: { open: boolean; onClose:
               ))}</Grid>}
           </Grid>
           
-          {request.report && (
+          {request.report ? (
             <>
               <Grid item xs={12}><Typography variant="subtitle1" fontWeight="700" sx={{ color: '#064E3B', mt: 2, mb: 2, borderBottom: '2px solid #064E3B', pb: 1 }}>Valuation Report</Typography></Grid>
               <Grid item xs={12} md={6}>
@@ -480,7 +480,8 @@ const ViewDetailsDialog = ({ open, onClose, request }: { open: boolean; onClose:
                 </Paper>
               </Grid>
             </>
-          )}
+          ) : null
+          }
         </Grid>
       </DialogContent>
       <DialogActions sx={{ p: 3, bgcolor: '#f8fafc', borderTop: '1px solid #e2e8f0' }}>
@@ -1708,7 +1709,7 @@ export default function RequestsPage() {
       );
     }
     if (canEstimateRequest(selectedRow.status, selectedRow.assignedEngineerId === user?.id, !!selectedRow.report)) items.push(<MenuItem key="estimate" onClick={() => handleEstimate(selectedRow, false)}><ListItemIcon><FileText size={18} /></ListItemIcon><ListItemText primary="Send Estimation" /></MenuItem>);
-    if (canEditEstimation(selectedRow.status, selectedRow.assignedEngineerId === user?.id, !!selectedRow.report)) items.push(<MenuItem key="re-estimate" onClick={() => handleEstimate(selectedRow, true)}><ListItemIcon><Edit size={18} /></ListItemIcon><ListItemText primary="Re-Estimate (Update Valuation)" /></MenuItem>);
+    if (canEditEstimation(selectedRow.status, selectedRow.assignedEngineerId === user?.id, !!selectedRow.report)) items.push(<MenuItem key="re-estimate" onClick={() => handleEstimate(selectedRow, true)}><ListItemIcon><Edit size={18} /></ListItemIcon><ListItemText primary="Re-Estimate" /></MenuItem>);
     if (selectedRow.report) items.push(<MenuItem key="view-report" onClick={() => handleView(selectedRow)}><ListItemIcon><FileText size={18} /></ListItemIcon><ListItemText primary="View Submitted Report" /></MenuItem>);
     return items;
   };

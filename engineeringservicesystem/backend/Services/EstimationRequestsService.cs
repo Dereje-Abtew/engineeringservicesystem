@@ -19,7 +19,7 @@ namespace backend.Services
             _context = context;
         }
 
-        public async Task<IEnumerable<EstimationRequestResponseDto>> GetRequestsAsync(string userId, List<string> userPermissions)
+        public async Task<IEnumerable<EstimationRequestResponseDto>> GetRequestsAsync(string userId, List<string> userPermissions, bool isAdminOrSystemAdmin = false)
         {
             var query = _context.EstimationRequests
                 .Include(e => e.BranchUser)
@@ -64,10 +64,14 @@ namespace backend.Services
             }
 
             var entities = await query.OrderByDescending(e => e.CreatedAt).ToListAsync();
-            return entities.Select(e => MapToResponseDto(e));
+            return entities.Select(e =>
+            {
+                var canViewReport = isAdminOrSystemAdmin || userPermissions.Contains(Permissions.RequestsViewEstimation) || e.AssignedEngineerId == userId;
+                return MapToResponseDto(e, canViewReport);
+            });
         }
 
-        public async Task<EstimationRequestResponseDto?> GetRequestByIdAsync(int id)
+        public async Task<EstimationRequestResponseDto?> GetRequestByIdAsync(int id, string userId, List<string> userPermissions, bool isAdminOrSystemAdmin = false)
         {
             var request = await _context.EstimationRequests
                 .Include(e => e.BranchUser)
@@ -76,7 +80,10 @@ namespace backend.Services
                 .Include(e => e.AssignedEngineer)
                 .FirstOrDefaultAsync(e => e.Id == id);
 
-            return request == null ? null : MapToResponseDto(request);
+            if (request == null) return null;
+
+            var canViewReport = isAdminOrSystemAdmin || userPermissions.Contains(Permissions.RequestsViewEstimation) || request.AssignedEngineerId == userId;
+            return MapToResponseDto(request, canViewReport);
         }
 
         public async Task<EstimationRequestResponseDto> CreateRequestAsync(CreateEstimationRequestDto dto, string userId)
@@ -142,7 +149,7 @@ namespace backend.Services
                 await _context.SaveChangesAsync();
             }
 
-            return await GetRequestByIdAsync(request.Id) ?? MapToResponseDto(request);
+            return await GetRequestByIdAsync(request.Id, userId, new List<string>(), false) ?? MapToResponseDto(request);
         }
 
         public async Task<bool> CheckerApproveAsync(int id, CheckerApproveDto dto)
@@ -361,6 +368,25 @@ namespace backend.Services
 
         private EstimationRequestResponseDto MapToResponseDto(EstimationRequest request)
         {
+            return MapToResponseDto(request, true);
+        }
+
+        private EstimationRequestResponseDto MapToResponseDto(EstimationRequest request, bool includeReport)
+        {
+            var attachmentDtos = request.Attachments?.Select(a => new DTOs.AttachmentDto
+            {
+                Id = a.Id,
+                FileName = a.FileName,
+                FileUrl = a.FilePath,
+                DocumentType = a.DocumentType
+            }).ToList() ?? new List<DTOs.AttachmentDto>();
+
+            if (!includeReport)
+            {
+                var hiddenReportTypes = new[] { "Estimation Excel", "Relevant Photo", "Estimation Report" };
+                attachmentDtos = attachmentDtos.Where(a => !hiddenReportTypes.Contains(a.DocumentType)).ToList();
+            }
+
             return new EstimationRequestResponseDto
             {
                 Id = request.Id,
@@ -382,20 +408,14 @@ namespace backend.Services
                 BranchUserName = request.BranchUser != null
                     ? $"{request.BranchUser.FirstName ?? string.Empty} {request.BranchUser.LastName ?? string.Empty}".Trim()
                     : string.Empty,
-                ReportId = request.Report?.Id,
+                ReportId = includeReport ? request.Report?.Id : null,
                 AssignedEngineerId = request.AssignedEngineerId,
                 AssignedEngineerName = request.AssignedEngineer != null
                     ? $"{request.AssignedEngineer.FirstName ?? string.Empty} {request.AssignedEngineer.LastName ?? string.Empty}".Trim()
                     : string.Empty,
                 EngineerAssignmentDate = request.EngineerAssignmentDate,
                 Location = $"{request.City}, {request.SubCity}, Kebele {request.Kebele}",
-                Attachments = request.Attachments?.Select(a => new DTOs.AttachmentDto
-                {
-                    Id = a.Id,
-                    FileName = a.FileName,
-                    FileUrl = a.FilePath,
-                    DocumentType = a.DocumentType
-                }).ToList() ?? new List<DTOs.AttachmentDto>(),
+                Attachments = attachmentDtos,
                 CheckerActionDate = request.CheckerActionDate,
                 CheckerActionDescription = request.CheckerActionDescription,
                 CheckerRejectionReason = request.CheckerRejectionReason,

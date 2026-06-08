@@ -24,6 +24,7 @@ public static class Permissions
     public const string RequestsAssign = "Permissions.Requests.Assign";
     public const string RequestsManageEngineersWorkLoad = "Permissions.Requests.ManageEngineersWorkLoad";
     public const string RequestsEstimate = "Permissions.Requests.Estimate";
+    public const string RequestsViewEstimation = "Permissions.Requests.ViewEstimation";
 
     // User Management
     public const string UserManagementView = "Permissions.UserManagement.View";
@@ -56,6 +57,7 @@ public static class Permissions
             RequestsAssign,
             RequestsManageEngineersWorkLoad,
             RequestsEstimate,
+            RequestsViewEstimation,
             UserManagementView,
             UserManagementManage,
             RoleManagementView,

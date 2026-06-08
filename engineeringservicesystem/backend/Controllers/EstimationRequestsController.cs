@@ -40,7 +40,8 @@ namespace backend.Controllers
                 .Select(c => c.Value)
                 .ToList();
 
-            var requests = await _requestsService.GetRequestsAsync(userId, userPermissions);
+            var isAdminOrSystemAdmin = User.IsInRole("Admin") || User.IsInRole("SystemAdmin");
+            var requests = await _requestsService.GetRequestsAsync(userId, userPermissions, isAdminOrSystemAdmin);
             return Ok(requests);
         }
 
@@ -50,7 +51,19 @@ namespace backend.Controllers
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<ActionResult<EstimationRequestResponseDto>> GetEstimationRequest(int id)
         {
-            var estimationRequestDto = await _requestsService.GetRequestByIdAsync(id);
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId))
+            {
+                return Unauthorized();
+            }
+
+            var userPermissions = User.FindAll("Permission")
+                .Concat(User.FindAll("http://schemas.microsoft.com/ws/2008/06/identity/claims/permission"))
+                .Select(c => c.Value)
+                .ToList();
+
+            var isAdminOrSystemAdmin = User.IsInRole("Admin") || User.IsInRole("SystemAdmin");
+            var estimationRequestDto = await _requestsService.GetRequestByIdAsync(id, userId, userPermissions, isAdminOrSystemAdmin);
             if (estimationRequestDto == null)
             {
                 return NotFound();

@@ -61,11 +61,20 @@ interface EstimationRequest {
   subCity: string;
   kebele: string;
   typeOfBuilding: string;
-  status: string;
+  status: number;
   createdAt: string;
   attachments: Attachment[];
   report?: EngineeringReport;
 }
+
+const statusMap: Record<number, { label: string; bg: string; color: string }> = {
+  0: { label: 'Pending', bg: 'rgba(241, 179, 28, 0.1)', color: '#f1b31c' },
+  1: { label: 'Checker Approved', bg: 'rgba(16, 185, 129, 0.1)', color: '#10b981' },
+  2: { label: 'Manager Approved', bg: 'rgba(16, 185, 129, 0.1)', color: '#10b981' },
+  3: { label: 'Assigned to Engineer', bg: 'rgba(59, 130, 246, 0.1)', color: '#2563eb' },
+  4: { label: 'Estimated', bg: 'rgba(16, 185, 129, 0.1)', color: '#10b981' },
+  5: { label: 'Rejected', bg: 'rgba(254, 226, 226, 0.75)', color: '#dc2626' }
+};
 
 export default function RequestDetailPage() {
   const { id } = useParams();
@@ -142,10 +151,10 @@ export default function RequestDetailPage() {
               </Typography>
               <Stack direction="row" spacing={1} alignItems="center">
                 <Chip
-                  label={request.status}
+                  label={statusMap[request.status]?.label ?? `Status ${request.status}`}
                   sx={{
-                    bgcolor: request.status === 'Pending' ? 'rgba(241, 179, 28, 0.1)' : 'rgba(16, 185, 129, 0.1)',
-                    color: request.status === 'Pending' ? '#f1b31c' : '#10b981',
+                    bgcolor: statusMap[request.status]?.bg ?? 'rgba(241, 241, 241, 0.9)',
+                    color: statusMap[request.status]?.color ?? '#334155',
                     fontWeight: 800,
                     borderRadius: '8px'
                   }}
@@ -236,7 +245,7 @@ export default function RequestDetailPage() {
         <Grid size={{ xs: 12, md: 5 }}>
           <Stack spacing={4}>
             {/* Prepare Report Form (For users with Approve permission) */}
-            {hasPermission(Permissions.RequestsApprove) && request.status === 'Pending' && (
+            {hasPermission(Permissions.RequestsApprove) && request.status === 0 && (
               <Paper elevation={0} sx={{ p: 4, borderRadius: 0, border: '2px solid #f1b31c', bgcolor: 'white' }}>
                 <Typography variant="h6" fontWeight="900" sx={{ mb: 1, color: '#064e3b', display: 'flex', alignItems: 'center', gap: 1 }}>
                   <FileEdit size={20} color="#f1b31c" /> Prepare Valuation Report
@@ -309,7 +318,7 @@ export default function RequestDetailPage() {
             )}
 
             {/* Display Report (If exists) */}
-            {request.report && (
+            {request.report ? (
               <Paper elevation={0} sx={{ p: 4, borderRadius: 0, border: '1px solid #10b981', bgcolor: 'rgba(16, 185, 129, 0.02)' }}>
                 <Typography variant="h6" fontWeight="900" sx={{ mb: 4, color: '#10b981', display: 'flex', alignItems: 'center', gap: 1 }}>
                   <CheckCircle2 size={20} /> Final Valuation Report
@@ -343,7 +352,7 @@ export default function RequestDetailPage() {
                   </Grid>
                 </Stack>
               </Paper>
-            )}
+            ) : null}
 
             {/* Status Alert for Branch-level users (those who create requests) */}
             {hasPermission(Permissions.RequestsCreate) && !request.report && (

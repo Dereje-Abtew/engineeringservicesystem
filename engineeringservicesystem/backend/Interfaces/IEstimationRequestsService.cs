@@ -8,10 +8,10 @@ namespace backend.Services
     public interface IEstimationRequestsService
     {
         // Returns clean response items instead of database models
-        Task<IEnumerable<EstimationRequestResponseDto>> GetRequestsAsync(string userId, List<string> userPermissions);
+        Task<IEnumerable<EstimationRequestResponseDto>> GetRequestsAsync(string userId, List<string> userPermissions, bool isAdminOrSystemAdmin = false);
 
         // Returns a clean response item or null
-        Task<EstimationRequestResponseDto?> GetRequestByIdAsync(int id);
+        Task<EstimationRequestResponseDto?> GetRequestByIdAsync(int id, string userId, List<string> userPermissions, bool isAdminOrSystemAdmin = false);
 
         // Accepts the incoming creation payload (with new fields), returns the finalized response schema
         Task<EstimationRequestResponseDto> CreateRequestAsync(CreateEstimationRequestDto dto, string userId);

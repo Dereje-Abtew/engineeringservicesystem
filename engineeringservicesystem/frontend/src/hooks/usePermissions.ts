@@ -32,6 +32,10 @@ export function usePermissions() {
     return hasPermission('Permissions.Requests.ViewAssigned');
   };
 
+  const canViewEstimationReport = (): boolean => {
+    return hasPermission('Permissions.Requests.ViewEstimation');
+  };
+
   // Action permission helpers
   const canCreateRequest = (): boolean => {
     return hasPermission('Permissions.Requests.Create');
@@ -91,6 +95,7 @@ export function usePermissions() {
     canManageWorkload,
     canEstimateRequest,
     canEditEstimation,
+    canViewEstimationReport,
     userPermissions: user?.permissions || [],
   };
 }

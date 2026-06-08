@@ -28,6 +28,7 @@ export const Permissions = {
     RequestsAssign: "Permissions.Requests.Assign",
     RequestsManageEngineersWorkLoad: "Permissions.Requests.ManageEngineersWorkLoad",
     RequestsEstimate: "Permissions.Requests.Estimate",
+    RequestsViewEstimation: "Permissions.Requests.ViewEstimation",
 
     // User Management
     UserManagementView: "Permissions.UserManagement.View",
