@@ -11,7 +11,7 @@ using System.Threading.Tasks;
 
 namespace backend.Controllers
 {
-    [Authorize(Policy = Permissions.RequestsView)]
+    [Authorize]
     [Route("api/[controller]")]
     [ApiController]
     public class EstimationRequestsController : ControllerBase
@@ -24,6 +24,7 @@ namespace backend.Controllers
         }
 
         // GET: api/EstimationRequests
+        [Authorize(Policy = Permissions.RequestsView)]
         [HttpGet]
         [ProducesResponseType(StatusCodes.Status200OK, Type = typeof(IEnumerable<EstimationRequestResponseDto>))]
         public async Task<ActionResult<IEnumerable<EstimationRequestResponseDto>>> GetEstimationRequests()
@@ -46,6 +47,7 @@ namespace backend.Controllers
         }
 
         // GET: api/EstimationRequests/5
+        [Authorize(Policy = Permissions.RequestsView)]
         [HttpGet("{id}")]
         [ProducesResponseType(StatusCodes.Status200OK, Type = typeof(EstimationRequestResponseDto))]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -89,7 +91,7 @@ namespace backend.Controllers
         }
 
         // POST: api/EstimationRequests/5/report
-        [Authorize(Policy = Permissions.RequestsApprove)]
+        [Authorize(Policy = Permissions.RequestsEstimate)]
         [HttpPost("{id}/report")] 
         [ProducesResponseType(StatusCodes.Status204NoContent)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -242,7 +244,7 @@ namespace backend.Controllers
         }
 
         // PUT: api/EstimationRequests/5/report
-        [Authorize(Policy = Permissions.RequestsApprove)]
+        [Authorize(Policy = Permissions.RequestsEstimate)]
         [HttpPut("{id}/report")]
         [ProducesResponseType(StatusCodes.Status204NoContent)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]

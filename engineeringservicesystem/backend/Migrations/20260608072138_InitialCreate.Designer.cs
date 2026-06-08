@@ -12,8 +12,8 @@ using backend.Data;
 namespace backend.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260523064438_UpdateEstimationWorkflow")]
-    partial class UpdateEstimationWorkflow
+    [Migration("20260608072138_InitialCreate")]
+    partial class InitialCreate
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -404,8 +404,17 @@ namespace backend.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("AssignedEngineerId")
+                        .HasColumnType("text");
+
+                    b.Property<bool?>("BillOfPenalty")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("BranchUserId")
                         .HasColumnType("text");
+
+                    b.Property<int>("BuildingType")
+                        .HasColumnType("integer");
 
                     b.Property<DateTime?>("CheckerActionDate")
                         .HasColumnType("timestamp with time zone");
@@ -416,12 +425,29 @@ namespace backend.Migrations
                     b.Property<string>("CheckerRejectionReason")
                         .HasColumnType("text");
 
+                    b.Property<string>("City")
+                        .IsRequired()
+                        .HasColumnType("text");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("Location")
+                    b.Property<DateTime?>("EngineerAssignmentDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Kebele")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<string>("LHUNo")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<double>("Latitude")
+                        .HasColumnType("double precision");
+
+                    b.Property<double>("Longitude")
+                        .HasColumnType("double precision");
 
                     b.Property<DateTime?>("ManagerActionDate")
                         .HasColumnType("timestamp with time zone");
@@ -439,20 +465,25 @@ namespace backend.Migrations
                     b.Property<double>("PlotArea")
                         .HasColumnType("double precision");
 
+                    b.Property<string>("ProjectFinanceDocType")
+                        .HasColumnType("text");
+
                     b.Property<int>("Purpose")
                         .HasColumnType("integer");
 
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 
-                    b.Property<int>("Type")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("TypeOfBuilding")
+                    b.Property<string>("SubCity")
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<int>("Type")
+                        .HasColumnType("integer");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("AssignedEngineerId");
 
                     b.HasIndex("BranchUserId");
 
@@ -581,9 +612,15 @@ namespace backend.Migrations
 
             modelBuilder.Entity("backend.Models.EstimationRequest", b =>
                 {
+                    b.HasOne("backend.Models.ApplicationUser", "AssignedEngineer")
+                        .WithMany()
+                        .HasForeignKey("AssignedEngineerId");
+
                     b.HasOne("backend.Models.ApplicationUser", "BranchUser")
                         .WithMany()
                         .HasForeignKey("BranchUserId");
+
+                    b.Navigation("AssignedEngineer");
 
                     b.Navigation("BranchUser");
                 });

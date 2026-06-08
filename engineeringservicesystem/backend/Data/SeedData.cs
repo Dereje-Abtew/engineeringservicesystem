@@ -110,6 +110,39 @@ namespace backend.Data
                 }
             }
 
+            // Create test users for each role
+            var testUsers = new[]
+            {
+                new { Email = "engineer@test.com", FirstName = "John", LastName = "Engineer", Role = "EngineeringOfficer" },
+                new { Email = "manager@test.com", FirstName = "Jane", LastName = "Manager", Role = "Manager" },
+                new { Email = "checker@test.com", FirstName = "Bob", LastName = "Checker", Role = "Checker" },
+                new { Email = "maker@test.com", FirstName = "Alice", LastName = "Maker", Role = "Maker" }
+            };
+
+            foreach (var testUser in testUsers)
+            {
+                var existingUser = await userManager.FindByEmailAsync(testUser.Email);
+                if (existingUser == null)
+                {
+                    var newUser = new ApplicationUser
+                    {
+                        UserName = testUser.Email,
+                        Email = testUser.Email,
+                        FirstName = testUser.FirstName,
+                        LastName = testUser.LastName,
+                        PhoneNumber = "+251900000000",
+                        UserType = UserType.EngineeringOffice,
+                        EmailConfirmed = true
+                    };
+
+                    var result = await userManager.CreateAsync(newUser, "Test@123!");
+                    if (result.Succeeded)
+                    {
+                        await userManager.AddToRoleAsync(newUser, testUser.Role);
+                    }
+                }
+            }
+
             await context.SaveChangesAsync();
         }
     }

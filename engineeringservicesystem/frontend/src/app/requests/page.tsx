@@ -629,14 +629,18 @@ LHU Number: ${request.lhuNo}
         formik.resetForm();
       } catch (error: unknown) {
         const errorData = getErrorData(error);
-        console.error('Estimation submission error:', errorData);
+        console.error('Estimation submission error - Full error:', error);
+        console.error('Estimation submission error - Error data:', errorData);
+        console.error('Estimation submission error - Error message:', error instanceof Error ? error.message : 'Unknown error');
 
         if (errorData?.errors) {
           const errors = errorData.errors;
           const errorList = Object.values(errors).flat().join(', ');
           notify(`Validation Error: ${errorList}`, 'error');
         } else {
-          notify(`Failed to submit estimation: ${getErrorMessage(error, 'Failed to submit estimation')}`, 'error');
+          const errMsg = getErrorMessage(error, 'Failed to submit estimation');
+          notify(`Failed to submit estimation: ${errMsg}`, 'error');
+          console.error('Final error message sent to user:', errMsg);
         }
       } finally {
         setSubmitting(false);
