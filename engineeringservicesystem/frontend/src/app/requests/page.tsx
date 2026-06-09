@@ -5,7 +5,7 @@ import DashboardLayout from '@/components/DashboardLayout';
 import { 
   Typography, Box, Chip, IconButton, Button, Paper, Menu, MenuItem, 
   ListItemIcon, ListItemText, Dialog, DialogTitle, DialogContent, 
-  DialogActions, TextField, CircularProgress, Alert, FormHelperText, Card, CardContent, Divider, Tabs, Tab, 
+  DialogActions, DialogContentText, TextField, CircularProgress, Alert, FormHelperText, Card, CardContent, Divider, Tabs, Tab, 
   Select, FormControl, InputLabel, Checkbox, FormControlLabel, Zoom, Tooltip, Avatar, Badge, keyframes,
   type SelectChangeEvent
 } from '@mui/material';
@@ -342,6 +342,11 @@ const ViewDetailsDialog = ({ open, onClose, request }: { open: boolean; onClose:
   const [sendingFilter, setSendingFilter] = useState(false);
   const [filterMessage, setFilterMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  // Dialog states for Estimation Excel warnings
+  const [estimationExcelWarningOpen, setEstimationExcelWarningOpen] = useState(false);
+  const [estimationExcelPendingId, setEstimationExcelPendingId] = useState<number | null>(null);
+  const [sendWarningOpen, setSendWarningOpen] = useState(false);
+
   useEffect(() => {
     if (open && request) {
       setFilterMessage(null);
@@ -401,16 +406,41 @@ const ViewDetailsDialog = ({ open, onClose, request }: { open: boolean; onClose:
 
   // Toggle selection of a single estimation document for the filtered send
   const toggleFilterSelection = (attachmentId: number) => {
-    setSelectedFilterIds(prev =>
-      prev.includes(attachmentId)
-        ? prev.filter(x => x !== attachmentId)
-        : [...prev, attachmentId]
-    );
+    // Find the attachment to check its document type
+    const attachment = attachments.find(a => a.id === attachmentId);
+    
+    // If it's an "Estimation Excel" document and we're selecting it, show warning
+    if (attachment?.documentType === 'Estimation Excel' && !selectedFilterIds.includes(attachmentId)) {
+      setEstimationExcelPendingId(attachmentId);
+      setEstimationExcelWarningOpen(true);
+    } else {
+      // Otherwise, proceed with normal toggle
+      setSelectedFilterIds(prev =>
+        prev.includes(attachmentId)
+          ? prev.filter(x => x !== attachmentId)
+          : [...prev, attachmentId]
+      );
+    }
   };
 
   // Send selected attachment ids to the backend so they become visible to
   // users with the Requests.ViewFilteredEstimation permission
   const handleSendFilter = async () => {
+    if (!request) return;
+    
+    // Check if any selected attachments are "Estimation Excel"
+    const hasEstimationExcel = attachments.some(
+      a => a.id != null && selectedFilterIds.includes(a.id) && a.documentType === 'Estimation Excel'
+    );
+
+    if (hasEstimationExcel) {
+      setSendWarningOpen(true);
+    } else {
+      await performSendFilter();
+    }
+  };
+
+  const performSendFilter = async () => {
     if (!request) return;
     setSendingFilter(true);
     setFilterMessage(null);
@@ -426,6 +456,28 @@ const ViewDetailsDialog = ({ open, onClose, request }: { open: boolean; onClose:
     } finally {
       setSendingFilter(false);
     }
+  };
+
+  const handleSendWarningConfirm = async () => {
+    setSendWarningOpen(false);
+    await performSendFilter();
+  };
+
+  const handleSendWarningCancel = () => {
+    setSendWarningOpen(false);
+  };
+
+  const handleEstimationExcelWarningConfirm = () => {
+    if (estimationExcelPendingId !== null) {
+      setSelectedFilterIds(prev => [...prev, estimationExcelPendingId]);
+      setEstimationExcelPendingId(null);
+    }
+    setEstimationExcelWarningOpen(false);
+  };
+
+  const handleEstimationExcelWarningCancel = () => {
+    setEstimationExcelPendingId(null);
+    setEstimationExcelWarningOpen(false);
   };
 
   if (!request) return null;
@@ -643,6 +695,107 @@ const ViewDetailsDialog = ({ open, onClose, request }: { open: boolean; onClose:
       <DialogActions sx={{ p: 3, bgcolor: '#f8fafc', borderTop: '1px solid #e2e8f0' }}>
         <Button onClick={onClose}>Close</Button>
       </DialogActions>
+
+      {/* Warning Dialog for selecting Estimation Excel */}
+      <Dialog
+        open={estimationExcelWarningOpen}
+        onClose={handleEstimationExcelWarningCancel}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ fontWeight: 900, color: '#f1b31c', backgroundColor: 'rgba(241, 179, 28, 0.1)' }}>
+          ⚠️ Estimation Excel - Sensitive Document
+        </DialogTitle>
+        <DialogContent sx={{ pt: 3 }}>
+          <DialogContentText sx={{ color: '#0f172a', fontWeight: 500, mb: 2 }}>
+            You are about to select the <strong>"Estimation Excel"</strong> document, which is highly sensitive.
+          </DialogContentText>
+          <DialogContentText sx={{ color: '#475569' }}>
+            Please ensure you have the necessary permissions and that this action is intended. Estimation Excel documents contain confidential financial information and should be handled with care.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button
+            onClick={handleEstimationExcelWarningCancel}
+            variant="outlined"
+            sx={{
+              borderColor: '#e2e8f0',
+              color: '#64748b',
+              borderRadius: 0,
+              fontWeight: 700,
+              '&:hover': { bgcolor: '#f8fafc' }
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleEstimationExcelWarningConfirm}
+            variant="contained"
+            sx={{
+              bgcolor: '#f1b31c',
+              color: '#0f172a',
+              borderRadius: 0,
+              fontWeight: 700,
+              '&:hover': { bgcolor: '#d99c1e' }
+            }}
+          >
+            I Understand, Proceed
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Warning Dialog for Send with Estimation Excel */}
+      <Dialog
+        open={sendWarningOpen}
+        onClose={handleSendWarningCancel}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ fontWeight: 900, color: '#f1b31c', backgroundColor: 'rgba(241, 179, 28, 0.1)' }}>
+          ⚠️ Confirm Sending Estimation Excel
+        </DialogTitle>
+        <DialogContent sx={{ pt: 3 }}>
+          <DialogContentText sx={{ color: '#0f172a', fontWeight: 500, mb: 2 }}>
+            Your selection includes the <strong>"Estimation Excel"</strong> document(s).
+          </DialogContentText>
+          <DialogContentText sx={{ color: '#475569', mb: 2 }}>
+            This is a sensitive document containing confidential financial information. Are you sure you want to send it?
+          </DialogContentText>
+          <Alert severity="warning" sx={{ borderRadius: 0 }}>
+            <Typography variant="body2" fontWeight="600">
+              Once sent, this information will be transmitted. Please verify all recipients have proper access rights.
+            </Typography>
+          </Alert>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button
+            onClick={handleSendWarningCancel}
+            variant="outlined"
+            sx={{
+              borderColor: '#e2e8f0',
+              color: '#64748b',
+              borderRadius: 0,
+              fontWeight: 700,
+              '&:hover': { bgcolor: '#f8fafc' }
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleSendWarningConfirm}
+            variant="contained"
+            sx={{
+              bgcolor: '#f1b31c',
+              color: '#0f172a',
+              borderRadius: 0,
+              fontWeight: 700,
+              '&:hover': { bgcolor: '#d99c1e' }
+            }}
+          >
+            Yes, Send
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Dialog>
   );
 };

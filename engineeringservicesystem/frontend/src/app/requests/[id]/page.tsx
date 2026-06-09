@@ -21,7 +21,12 @@ import {
   IconButton,
   Breadcrumbs,
   Checkbox,
-  FormControlLabel
+  FormControlLabel,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  DialogContentText
 } from '@mui/material';
 import { useParams, useRouter } from 'next/navigation';
 import {
@@ -106,6 +111,11 @@ export default function RequestDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
+  // Dialog states for warnings
+  const [estimationExcelWarningOpen, setEstimationExcelWarningOpen] = useState(false);
+  const [estimationExcelPendingId, setEstimationExcelPendingId] = useState<number | null>(null);
+  const [sendWarningOpen, setSendWarningOpen] = useState(false);
+
   // Selected attachment ids for the filter (used by users with Requests.ViewEstimation permission)
   const [selectedFilterIds, setSelectedFilterIds] = useState<number[]>([]);
 
@@ -153,6 +163,19 @@ export default function RequestDetailPage() {
 
   // Send selected filtered estimation attachments to the server
   const handleSendFilter = async () => {
+    // Check if any selected attachments are "Estimation Excel"
+    const hasEstimationExcel = (request?.attachments ?? []).some(
+      a => a.id != null && selectedFilterIds.includes(a.id) && a.documentType === 'Estimation Excel'
+    );
+
+    if (hasEstimationExcel) {
+      setSendWarningOpen(true);
+    } else {
+      await performSendFilter();
+    }
+  };
+
+  const performSendFilter = async () => {
     setSendingFilter(true);
     setError(null);
     setSuccessMsg(null);
@@ -171,12 +194,44 @@ export default function RequestDetailPage() {
     }
   };
 
+  const handleSendWarningConfirm = async () => {
+    setSendWarningOpen(false);
+    await performSendFilter();
+  };
+
+  const handleSendWarningCancel = () => {
+    setSendWarningOpen(false);
+  };
+
   const toggleFilterSelection = (attachmentId: number) => {
-    setSelectedFilterIds(prev =>
-      prev.includes(attachmentId)
-        ? prev.filter(x => x !== attachmentId)
-        : [...prev, attachmentId]
-    );
+    // Find the attachment to check its document type
+    const attachment = request?.attachments.find(a => a.id === attachmentId);
+    
+    // If it's an "Estimation Excel" document and we're selecting it, show warning
+    if (attachment?.documentType === 'Estimation Excel' && !selectedFilterIds.includes(attachmentId)) {
+      setEstimationExcelPendingId(attachmentId);
+      setEstimationExcelWarningOpen(true);
+    } else {
+      // Otherwise, proceed with normal toggle
+      setSelectedFilterIds(prev =>
+        prev.includes(attachmentId)
+          ? prev.filter(x => x !== attachmentId)
+          : [...prev, attachmentId]
+      );
+    }
+  };
+
+  const handleEstimationExcelWarningConfirm = () => {
+    if (estimationExcelPendingId !== null) {
+      setSelectedFilterIds(prev => [...prev, estimationExcelPendingId]);
+      setEstimationExcelPendingId(null);
+    }
+    setEstimationExcelWarningOpen(false);
+  };
+
+  const handleEstimationExcelWarningCancel = () => {
+    setEstimationExcelPendingId(null);
+    setEstimationExcelWarningOpen(false);
   };
 
   const canSelectEstimationDocs = hasPermission(Permissions.RequestsViewEstimation);
@@ -537,6 +592,107 @@ export default function RequestDetailPage() {
           </Stack>
         </Grid>
       </Grid>
+
+      {/* Warning Dialog for Estimation Excel Selection */}
+      <Dialog
+        open={estimationExcelWarningOpen}
+        onClose={handleEstimationExcelWarningCancel}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ fontWeight: 900, color: '#f1b31c', backgroundColor: 'rgba(241, 179, 28, 0.1)' }}>
+          ⚠️ Estimation Excel - Sensitive Document
+        </DialogTitle>
+        <DialogContent sx={{ pt: 3 }}>
+          <DialogContentText sx={{ color: '#0f172a', fontWeight: 500, mb: 2 }}>
+            You are about to select the <strong>"Estimation Excel"</strong> document, which is highly sensitive.
+          </DialogContentText>
+          <DialogContentText sx={{ color: '#475569' }}>
+            Please ensure you have the necessary permissions and that this action is intended. Estimation Excel documents contain confidential financial information and should be handled with care.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button
+            onClick={handleEstimationExcelWarningCancel}
+            variant="outlined"
+            sx={{
+              borderColor: '#e2e8f0',
+              color: '#64748b',
+              borderRadius: 0,
+              fontWeight: 700,
+              '&:hover': { bgcolor: '#f8fafc' }
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleEstimationExcelWarningConfirm}
+            variant="contained"
+            sx={{
+              bgcolor: '#f1b31c',
+              color: '#0f172a',
+              borderRadius: 0,
+              fontWeight: 700,
+              '&:hover': { bgcolor: '#d99c1e' }
+            }}
+          >
+            I Understand, Proceed
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Warning Dialog for Send with Estimation Excel */}
+      <Dialog
+        open={sendWarningOpen}
+        onClose={handleSendWarningCancel}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ fontWeight: 900, color: '#f1b31c', backgroundColor: 'rgba(241, 179, 28, 0.1)' }}>
+          ⚠️ Confirm Sending Estimation Excel
+        </DialogTitle>
+        <DialogContent sx={{ pt: 3 }}>
+          <DialogContentText sx={{ color: '#0f172a', fontWeight: 500, mb: 2 }}>
+            Your selection includes the <strong>"Estimation Excel"</strong> document(s).
+          </DialogContentText>
+          <DialogContentText sx={{ color: '#475569', mb: 2 }}>
+            This is a sensitive document containing confidential financial information. Are you sure you want to send it?
+          </DialogContentText>
+          <Alert severity="warning" sx={{ borderRadius: 0 }}>
+            <Typography variant="body2" fontWeight="600">
+              Once sent, this information will be transmitted. Please verify all recipients have proper access rights.
+            </Typography>
+          </Alert>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button
+            onClick={handleSendWarningCancel}
+            variant="outlined"
+            sx={{
+              borderColor: '#e2e8f0',
+              color: '#64748b',
+              borderRadius: 0,
+              fontWeight: 700,
+              '&:hover': { bgcolor: '#f8fafc' }
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleSendWarningConfirm}
+            variant="contained"
+            sx={{
+              bgcolor: '#f1b31c',
+              color: '#0f172a',
+              borderRadius: 0,
+              fontWeight: 700,
+              '&:hover': { bgcolor: '#d99c1e' }
+            }}
+          >
+            Yes, Send
+          </Button>
+        </DialogActions>
+      </Dialog>
     </DashboardLayout>
   );
 }
