@@ -22,7 +22,11 @@ import {
   //  Navigation, Heart, Flame, Settings,BarChart3, 
   Activity,
   //  Gauge, AlertCircle, Check, ArrowRight
+  Send,
+  Filter,
+  CheckCircle2
 } from 'lucide-react';
+import { Permissions } from '@/constants/permissions';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/store';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -70,6 +74,13 @@ const requestInputSx = {
     fontSize: '1rem'
   }
 };
+
+// Estimation document types that can be selected/sent for filtered estimation view
+const SELECTABLE_DOCUMENT_TYPES = new Set<string>([
+  'Estimation Excel',
+  'Relevant Photo',
+  'Estimation Report'
+]);
 
 const requestSelectSx = {
   ...requestInputSx,
@@ -128,6 +139,11 @@ interface EstimationRequest {
   projectFinanceDocType?: string;
   billOfPenalty?: boolean;
   attachments?: Attachment[];
+  // Filtered estimation attachments (populated by the backend for users with
+  // Requests.ViewEstimation or Requests.ViewFilteredEstimation permissions)
+  filteredEstimationAttachments?: Attachment[];
+  filteredAttachmentIds?: number[];
+  selectableAttachmentIds?: number[];
 }
 
 interface Attachment {
@@ -316,37 +332,40 @@ const PasswordChangeDialog = ({ open, onClose }: { open: boolean; onClose: () =>
 // View Details Dialog Component
 // =================================================================
 
+// Note: hasPermission is consumed inside the dialog via the auth store.
 const ViewDetailsDialog = ({ open, onClose, request }: { open: boolean; onClose: () => void; request: EstimationRequest | null }) => {
+  const { hasPermission } = useAuthStore();
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [loadingAttachments, setLoadingAttachments] = useState(false);
+  // Selected attachment ids for the filtered-estimation send action
+  const [selectedFilterIds, setSelectedFilterIds] = useState<number[]>([]);
+  const [sendingFilter, setSendingFilter] = useState(false);
+  const [filterMessage, setFilterMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
     if (open && request) {
-      if (request.attachments && request.attachments.length > 0) {
-        setAttachments(request.attachments);
-        setLoadingAttachments(false);
-      } else if (request.id) {
-        const fetchAttachments = async () => {
-          setLoadingAttachments(true);
-          try {
-            const fullRequest = await api.get<EstimationRequest>(`/EstimationRequests/${request.id}`, { silent: true });
-            if (fullRequest?.attachments) {
-              setAttachments(fullRequest.attachments);
-            } else {
-              setAttachments([]);
-            }
-          } catch (err) {
-            console.error('Failed to fetch attachments:', err);
+      setFilterMessage(null);
+      // Always pull the latest request so filtered fields are populated by the backend
+      const fetchAttachments = async () => {
+        setLoadingAttachments(true);
+        try {
+          const fullRequest = await api.get<EstimationRequest>(`/EstimationRequests/${request.id}`, { silent: true });
+          if (fullRequest?.attachments) {
+            setAttachments(fullRequest.attachments);
+          } else {
             setAttachments([]);
-          } finally {
-            setLoadingAttachments(false);
           }
-        };
-        fetchAttachments();
-      } else {
-        setAttachments([]);
-        setLoadingAttachments(false);
-      }
+          // Initialize the selected ids from the server
+          setSelectedFilterIds(fullRequest?.filteredAttachmentIds ?? []);
+        } catch (err) {
+          console.error('Failed to fetch attachments:', err);
+          setAttachments(request.attachments ?? []);
+          setSelectedFilterIds(request.filteredAttachmentIds ?? []);
+        } finally {
+          setLoadingAttachments(false);
+        }
+      };
+      fetchAttachments();
     }
   }, [open, request]);
 
@@ -378,6 +397,35 @@ const ViewDetailsDialog = ({ open, onClose, request }: { open: boolean; onClose:
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  // Toggle selection of a single estimation document for the filtered send
+  const toggleFilterSelection = (attachmentId: number) => {
+    setSelectedFilterIds(prev =>
+      prev.includes(attachmentId)
+        ? prev.filter(x => x !== attachmentId)
+        : [...prev, attachmentId]
+    );
+  };
+
+  // Send selected attachment ids to the backend so they become visible to
+  // users with the Requests.ViewFilteredEstimation permission
+  const handleSendFilter = async () => {
+    if (!request) return;
+    setSendingFilter(true);
+    setFilterMessage(null);
+    try {
+      await api.post('/FilteredEstimationAttachments', {
+        estimationRequestId: request.id,
+        attachmentIds: selectedFilterIds
+      });
+      setFilterMessage({ type: 'success', text: `Saved ${selectedFilterIds.length} filtered attachment(s) successfully.` });
+    } catch (err: unknown) {
+      const msg = getErrorMessage(err, 'Failed to save filtered attachments');
+      setFilterMessage({ type: 'error', text: msg });
+    } finally {
+      setSendingFilter(false);
+    }
   };
 
   if (!request) return null;
@@ -426,33 +474,141 @@ const ViewDetailsDialog = ({ open, onClose, request }: { open: boolean; onClose:
           <Grid item xs={12}>
             {loadingAttachments ? <Box sx={{ textAlign: 'center', py: 4 }}><CircularProgress /></Box>
             : attachments.length === 0 ? <Box sx={{ p: 4, bgcolor: '#f8fafc', textAlign: 'center' }}><Typography variant="body2" sx={{ color: '#94a3b8' }}>No attachments</Typography></Box>
-            : <Grid container spacing={2}>{attachments.map((att, idx) => (
-                <Grid item xs={12} sm={6} key={att.id || idx}>
-                  <Card sx={{ borderRadius: '12px' }}>
-                    <CardContent>
-                      <Box display="flex" justifyContent="space-between" alignItems="center">
-                        <Box>
-                          <Typography variant="subtitle2" fontWeight="600">{att.fileName}</Typography>
-                          <Chip label={att.documentType} size="small" sx={{ mt: 1 }} />
-                        </Box>
-                        <Box display="flex" gap={0.5}>
-                          <Tooltip title="View document">
-                            <IconButton onClick={() => handleViewFile(att.fileUrl)} size="small">
-                              <Eye size={18} />
-                            </IconButton>
-                          </Tooltip>
-                          <Tooltip title="Download document">
-                            <IconButton onClick={() => handleDownload(att.fileUrl, att.fileName)} size="small">
-                              <Download size={18} />
-                            </IconButton>
-                          </Tooltip>
-                        </Box>
+            : (() => {
+                const canSelectEstimationDocs = hasPermission(Permissions.RequestsViewEstimation);
+                const selectableCount = attachments.filter(
+                  a => a.id != null && SELECTABLE_DOCUMENT_TYPES.has(a.documentType)
+                ).length;
+                return (
+                  <Box>
+                    <Grid container spacing={2}>
+                      {attachments.map((att, idx) => {
+                        const isSelectable = canSelectEstimationDocs
+                          && att.id != null
+                          && SELECTABLE_DOCUMENT_TYPES.has(att.documentType);
+                        const isSelected = isSelectable && selectedFilterIds.includes(att.id as number);
+                        return (
+                          <Grid item xs={12} sm={6} key={att.id || idx}>
+                            <Card sx={{
+                              borderRadius: '12px',
+                              border: isSelected ? '2px solid #10b981' : '1px solid #e2e8f0',
+                              bgcolor: isSelected ? 'rgba(16, 185, 129, 0.04)' : 'white',
+                              transition: 'all 0.2s ease'
+                            }}>
+                              <CardContent>
+                                <Box display="flex" justifyContent="space-between" alignItems="center" gap={1}>
+                                  <Box display="flex" alignItems="center" gap={1} sx={{ minWidth: 0, flex: 1 }}>
+                                    {isSelectable && (
+                                      <Checkbox
+                                        checked={isSelected}
+                                        onChange={() => toggleFilterSelection(att.id as number)}
+                                        sx={{
+                                          color: '#10b981',
+                                          '&.Mui-checked': { color: '#10b981' },
+                                          p: 0.5
+                                        }}
+                                        data-testid={`filter-checkbox-${att.id}`}
+                                      />
+                                    )}
+                                    <Box sx={{ minWidth: 0 }}>
+                                      <Typography variant="subtitle2" fontWeight="600" noWrap title={att.fileName}>{att.fileName}</Typography>
+                                      <Chip label={att.documentType} size="small" sx={{ mt: 0.5 }} />
+                                    </Box>
+                                  </Box>
+                                  <Box display="flex" gap={0.5} flexShrink={0}>
+                                    <Tooltip title="View document">
+                                      <IconButton onClick={() => handleViewFile(att.fileUrl)} size="small">
+                                        <Eye size={18} />
+                                      </IconButton>
+                                    </Tooltip>
+                                    <Tooltip title="Download document">
+                                      <IconButton onClick={() => handleDownload(att.fileUrl, att.fileName)} size="small">
+                                        <Download size={18} />
+                                      </IconButton>
+                                    </Tooltip>
+                                  </Box>
+                                </Box>
+                              </CardContent>
+                            </Card>
+                          </Grid>
+                        );
+                      })}
+                    </Grid>
+
+                    {/* Send filter button: only for users with Requests.ViewEstimation permission */}
+                    {canSelectEstimationDocs && selectableCount > 0 && (
+                      <Box sx={{ mt: 3, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1.5 }}>
+                        {filterMessage && (
+                          <Alert
+                            severity={filterMessage.type === 'success' ? 'success' : 'error'}
+                            onClose={() => setFilterMessage(null)}
+                            sx={{ width: '100%' }}
+                          >
+                            {filterMessage.text}
+                          </Alert>
+                        )}
+                        <Button
+                          variant="contained"
+                          startIcon={sendingFilter ? <CircularProgress size={18} color="inherit" /> : <Send size={18} />}
+                          onClick={handleSendFilter}
+                          disabled={sendingFilter}
+                          sx={{
+                            bgcolor: '#064e3b',
+                            color: 'white',
+                            fontWeight: 800,
+                            borderRadius: '12px',
+                            px: 3,
+                            boxShadow: '0 6px 14px rgba(6, 78, 59, 0.25)',
+                            '&:hover': { bgcolor: '#065f46' }
+                          }}
+                        >
+                          {sendingFilter ? 'Sending...' : `Send (${selectedFilterIds.length} selected)`}
+                        </Button>
                       </Box>
-                    </CardContent>
-                  </Card>
-                </Grid>
-              ))}</Grid>}
+                    )}
+                  </Box>
+                );
+              })()}
           </Grid>
+
+          {/* Filtered Estimation Documents - for users with Requests.ViewFilteredEstimation */}
+          {hasPermission(Permissions.RequestsViewFilteredEstimation) && (request.filteredEstimationAttachments?.length ?? 0) > 0 && (
+            <Grid item xs={12}>
+              <Paper elevation={0} sx={{ p: 3, mt: 1, borderRadius: '12px', border: '1px solid #10b981', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', bgcolor: 'rgba(16, 185, 129, 0.02)' }}>
+                <Typography variant="subtitle1" fontWeight="900" sx={{ mb: 2, color: '#10b981', display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <CheckCircle2 size={20} /> Filtered Estimation Documents
+                </Typography>
+                <Grid container spacing={2}>
+                  {request.filteredEstimationAttachments!.map((att, idx) => (
+                    <Grid item xs={12} sm={6} key={att.id || idx}>
+                      <Card sx={{ borderRadius: '12px', border: '1px solid #d1fae5', bgcolor: 'white' }}>
+                        <CardContent>
+                          <Box display="flex" justifyContent="space-between" alignItems="center" gap={1}>
+                            <Box sx={{ minWidth: 0, flex: 1 }}>
+                              <Typography variant="subtitle2" fontWeight="700" noWrap title={att.fileName}>{att.fileName}</Typography>
+                              <Chip label={att.documentType} size="small" sx={{ mt: 0.5, bgcolor: 'rgba(16, 185, 129, 0.1)', color: '#047857', fontWeight: 600 }} />
+                            </Box>
+                            <Box display="flex" gap={0.5} flexShrink={0}>
+                              <Tooltip title="View document">
+                                <IconButton onClick={() => handleViewFile(att.fileUrl)} size="small" sx={{ color: '#10b981' }}>
+                                  <Eye size={18} />
+                                </IconButton>
+                              </Tooltip>
+                              <Tooltip title="Download document">
+                                <IconButton onClick={() => handleDownload(att.fileUrl, att.fileName)} size="small" sx={{ color: '#10b981' }}>
+                                  <Download size={18} />
+                                </IconButton>
+                              </Tooltip>
+                            </Box>
+                          </Box>
+                        </CardContent>
+                      </Card>
+                    </Grid>
+                  ))}
+                </Grid>
+              </Paper>
+            </Grid>
+          )}
           
           {request.report ? (
             <>

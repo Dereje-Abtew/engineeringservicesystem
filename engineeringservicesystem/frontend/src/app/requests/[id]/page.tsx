@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import {
   Typography,
@@ -19,7 +19,9 @@ import {
   Stack,
   Grid,
   IconButton,
-  Breadcrumbs
+  Breadcrumbs,
+  Checkbox,
+  FormControlLabel
 } from '@mui/material';
 import { useParams, useRouter } from 'next/navigation';
 import {
@@ -33,7 +35,8 @@ import {
   Send,
   ChevronLeft,
   Calendar,
-  DollarSign
+  DollarSign,
+  Filter
 } from 'lucide-react';
 import { useAuthStore } from '@/store/store';
 import { Permissions } from '@/constants/permissions';
@@ -41,6 +44,7 @@ import api from '@/utils/api';
 import Link from 'next/link';
 
 interface Attachment {
+  id?: number;
   fileName: string;
   fileUrl: string;
   documentType: string;
@@ -65,7 +69,17 @@ interface EstimationRequest {
   createdAt: string;
   attachments: Attachment[];
   report?: EngineeringReport;
+  filteredEstimationAttachments?: Attachment[];
+  filteredAttachmentIds?: number[];
+  selectableAttachmentIds?: number[];
 }
+
+// Document types that can be selected/sent for filtered estimation view
+const SELECTABLE_DOCUMENT_TYPES = new Set<string>([
+  'Estimation Excel',
+  'Relevant Photo',
+  'Estimation Report'
+]);
 
 const statusMap: Record<number, { label: string; bg: string; color: string }> = {
   0: { label: 'Pending', bg: 'rgba(241, 179, 28, 0.1)', color: '#f1b31c' },
@@ -88,7 +102,12 @@ export default function RequestDetailPage() {
     siteVisitDate: new Date().toISOString().split('T')[0]
   });
   const [submitting, setSubmitting] = useState(false);
+  const [sendingFilter, setSendingFilter] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  // Selected attachment ids for the filter (used by users with Requests.ViewEstimation permission)
+  const [selectedFilterIds, setSelectedFilterIds] = useState<number[]>([]);
 
   const fetchRequest = useCallback(async () => {
     try {
@@ -102,8 +121,11 @@ export default function RequestDetailPage() {
           siteVisitDate: data.report.siteVisitDate.split('T')[0]
         });
       }
-    } catch (err: any) {
-      setError(err.message);
+      // Initialize the selected ids from the server
+      setSelectedFilterIds(data.filteredAttachmentIds ?? []);
+    } catch (err: unknown) {
+      const e = err as { message?: string };
+      setError(e.message || 'Failed to load request');
     } finally {
       setLoading(false);
     }
@@ -120,13 +142,54 @@ export default function RequestDetailPage() {
         estimationRequestId: Number(id),
         ...reportForm
       });
-      await fetchRequest(); // Refresh data
-    } catch (err: any) {
-      setError(err.message);
+      await fetchRequest();
+    } catch (err: unknown) {
+      const e = err as { message?: string };
+      setError(e.message || 'Failed to submit report');
     } finally {
       setSubmitting(false);
     }
   };
+
+  // Send selected filtered estimation attachments to the server
+  const handleSendFilter = async () => {
+    setSendingFilter(true);
+    setError(null);
+    setSuccessMsg(null);
+    try {
+      await api.post('/FilteredEstimationAttachments', {
+        estimationRequestId: Number(id),
+        attachmentIds: selectedFilterIds
+      });
+      setSuccessMsg('Filtered estimation attachments saved successfully');
+      await fetchRequest();
+    } catch (err: unknown) {
+      const e = err as { message?: string };
+      setError(e.message || 'Failed to save filtered attachments');
+    } finally {
+      setSendingFilter(false);
+    }
+  };
+
+  const toggleFilterSelection = (attachmentId: number) => {
+    setSelectedFilterIds(prev =>
+      prev.includes(attachmentId)
+        ? prev.filter(x => x !== attachmentId)
+        : [...prev, attachmentId]
+    );
+  };
+
+  const canSelectEstimationDocs = hasPermission(Permissions.RequestsViewEstimation);
+  const canViewFilteredEstimation = hasPermission(Permissions.RequestsViewFilteredEstimation);
+
+  // Attachments the user can actually select (estimation docs that have an id)
+  const selectableAttachments = useMemo(() => {
+    if (!request) return [];
+    const selectable = (request.attachments ?? []).filter(
+      a => a.id != null && SELECTABLE_DOCUMENT_TYPES.has(a.documentType)
+    );
+    return selectable;
+  }, [request]);
 
   if (loading) return <DashboardLayout><Box sx={{ display: 'flex', justifyContent: 'center', py: 10 }}><CircularProgress color="secondary" /></Box></DashboardLayout>;
   if (!request) return <DashboardLayout><Alert severity="error">{error || 'Request not found'}</Alert></DashboardLayout>;
@@ -167,6 +230,17 @@ export default function RequestDetailPage() {
           </Box>
         </Box>
       </Box>
+
+      {error && (
+        <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
+          {error}
+        </Alert>
+      )}
+      {successMsg && (
+        <Alert severity="success" sx={{ mb: 3 }} onClose={() => setSuccessMsg(null)}>
+          {successMsg}
+        </Alert>
+      )}
 
       <Grid container spacing={4}>
         {/* Left Column: Information */}
@@ -210,34 +284,122 @@ export default function RequestDetailPage() {
               </Typography>
 
               <List sx={{ bgcolor: '#f8fafc', borderRadius: '16px', p: 1 }}>
-                {request.attachments.map((file, index) => (
-                  <ListItem
-                    key={index}
-                    sx={{ bgcolor: 'white', mb: 1, borderRadius: 0, border: '1px solid #f1f5f9' }}
-                    secondaryAction={
-                      <IconButton
-                        component="a"
-                        href={file.fileUrl}
-                        target="_blank"
-                        sx={{ color: '#064e3b', bgcolor: 'rgba(6, 78, 59, 0.05)', '&:hover': { bgcolor: 'rgba(6, 78, 59, 0.1)' } }}
-                      >
-                        <Download size={18} />
-                      </IconButton>
-                    }
-                  >
-                    <ListItemIcon sx={{ minWidth: 45 }}>
-                      <FileText color="#64748b" />
-                    </ListItemIcon>
-                    <ListItemText
-                      primary={file.fileName}
-                      secondary={file.documentType}
-                      primaryTypographyProps={{ fontWeight: 700, color: '#0f172a' }}
-                      secondaryTypographyProps={{ fontWeight: 600, color: '#94a3b8' }}
-                    />
-                  </ListItem>
-                ))}
+                {request.attachments.map((file, index) => {
+                  const isSelectable = canSelectEstimationDocs
+                    && file.id != null
+                    && SELECTABLE_DOCUMENT_TYPES.has(file.documentType);
+                  const isSelected = isSelectable && selectedFilterIds.includes(file.id as number);
+
+                  return (
+                    <ListItem
+                      key={file.id ?? index}
+                      sx={{
+                        bgcolor: isSelected ? 'rgba(16, 185, 129, 0.06)' : 'white',
+                        mb: 1,
+                        borderRadius: 0,
+                        border: isSelected ? '1px solid #10b981' : '1px solid #f1f5f9'
+                      }}
+                      secondaryAction={
+                        <IconButton
+                          component="a"
+                          href={file.fileUrl}
+                          target="_blank"
+                          sx={{ color: '#064e3b', bgcolor: 'rgba(6, 78, 59, 0.05)', '&:hover': { bgcolor: 'rgba(6, 78, 59, 0.1)' } }}
+                        >
+                          <Download size={18} />
+                        </IconButton>
+                      }
+                    >
+                      {isSelectable && (
+                        <Checkbox
+                          checked={isSelected}
+                          onChange={() => toggleFilterSelection(file.id as number)}
+                          sx={{
+                            color: '#10b981',
+                            '&.Mui-checked': { color: '#10b981' },
+                            mr: 1
+                          }}
+                          data-testid={`filter-checkbox-${file.id}`}
+                        />
+                      )}
+                      <ListItemIcon sx={{ minWidth: 45 }}>
+                        <FileText color="#64748b" />
+                      </ListItemIcon>
+                      <ListItemText
+                        primary={file.fileName}
+                        secondary={file.documentType}
+                        primaryTypographyProps={{ fontWeight: 700, color: '#0f172a' }}
+                        secondaryTypographyProps={{ fontWeight: 600, color: '#94a3b8' }}
+                      />
+                    </ListItem>
+                  );
+                })}
+                {request.attachments.length === 0 && (
+                  <Typography variant="body2" sx={{ color: '#94a3b8', p: 2 }}>
+                    No attachments available.
+                  </Typography>
+                )}
               </List>
+
+              {/* Send filter button: visible only to users with Requests.ViewEstimation permission */}
+              {canSelectEstimationDocs && selectableAttachments.length > 0 && (
+                <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end' }}>
+                  <Button
+                    variant="contained"
+                    startIcon={sendingFilter ? <CircularProgress size={18} color="inherit" /> : <Filter size={18} />}
+                    onClick={handleSendFilter}
+                    disabled={sendingFilter}
+                    sx={{
+                      bgcolor: '#064e3b',
+                      color: 'white',
+                      fontWeight: 800,
+                      borderRadius: 0,
+                      '&:hover': { bgcolor: '#065f46' }
+                    }}
+                  >
+                    {sendingFilter ? 'Sending...' : `Send Filter (${selectedFilterIds.length} selected)`}
+                  </Button>
+                </Box>
+              )}
             </Paper>
+
+            {/* Filtered Estimation Attachments - for users with Requests.ViewFilteredEstimation */}
+            {canViewFilteredEstimation && (request.filteredEstimationAttachments?.length ?? 0) > 0 && (
+              <Paper elevation={0} sx={{ p: 4, borderRadius: 0, border: '1px solid #10b981', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', bgcolor: 'rgba(16, 185, 129, 0.02)' }}>
+                <Typography variant="h6" fontWeight="900" sx={{ mb: 3, color: '#10b981', display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <CheckCircle2 size={20} /> Filtered Estimation Documents
+                </Typography>
+
+                <List sx={{ bgcolor: '#f8fafc', borderRadius: '16px', p: 1 }}>
+                  {request.filteredEstimationAttachments!.map((file, index) => (
+                    <ListItem
+                      key={file.id ?? index}
+                      sx={{ bgcolor: 'white', mb: 1, borderRadius: 0, border: '1px solid #d1fae5' }}
+                      secondaryAction={
+                        <IconButton
+                          component="a"
+                          href={file.fileUrl}
+                          target="_blank"
+                          sx={{ color: '#10b981', bgcolor: 'rgba(16, 185, 129, 0.05)', '&:hover': { bgcolor: 'rgba(16, 185, 129, 0.1)' } }}
+                        >
+                          <Download size={18} />
+                        </IconButton>
+                      }
+                    >
+                      <ListItemIcon sx={{ minWidth: 45 }}>
+                        <FileText color="#10b981" />
+                      </ListItemIcon>
+                      <ListItemText
+                        primary={file.fileName}
+                        secondary={file.documentType}
+                        primaryTypographyProps={{ fontWeight: 700, color: '#0f172a' }}
+                        secondaryTypographyProps={{ fontWeight: 600, color: '#94a3b8' }}
+                      />
+                    </ListItem>
+                  ))}
+                </List>
+              </Paper>
+            )}
           </Stack>
         </Grid>
 
@@ -345,7 +507,7 @@ export default function RequestDetailPage() {
                       <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 800, textTransform: 'uppercase', mb: 1, display: 'block' }}>Remarks</Typography>
                       <Paper variant="outlined" sx={{ p: 2, borderRadius: 0, bgcolor: '#f8fafc', border: '1px solid #e2e8f0' }}>
                         <Typography variant="body2" sx={{ color: '#475569', fontWeight: 500, fontStyle: 'italic' }}>
-                          "{request.report.remarks}"
+                          &ldquo;{request.report.remarks}&rdquo;
                         </Typography>
                       </Paper>
                     </Grid>

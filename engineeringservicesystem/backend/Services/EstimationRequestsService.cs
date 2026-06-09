@@ -14,6 +14,14 @@ namespace backend.Services
     {
         private readonly ApplicationDbContext _context;
 
+        // Estimation document types that can be selected by users with RequestsViewEstimation permission
+        private static readonly string[] EstimationDocumentTypes = new[]
+        {
+            "Estimation Excel",
+            "Relevant Photo",
+            "Estimation Report"
+        };
+
         public EstimationRequestsService(ApplicationDbContext context)
         {
             _context = context;
@@ -67,7 +75,7 @@ namespace backend.Services
             return entities.Select(e =>
             {
                 var canViewReport = isAdminOrSystemAdmin || userPermissions.Contains(Permissions.RequestsViewEstimation) || e.AssignedEngineerId == userId;
-                return MapToResponseDto(e, canViewReport);
+                return MapToResponseDto(e, canViewReport, userPermissions, isAdminOrSystemAdmin);
             });
         }
 
@@ -83,7 +91,7 @@ namespace backend.Services
             if (request == null) return null;
 
             var canViewReport = isAdminOrSystemAdmin || userPermissions.Contains(Permissions.RequestsViewEstimation) || request.AssignedEngineerId == userId;
-            return MapToResponseDto(request, canViewReport);
+            return MapToResponseDto(request, canViewReport, userPermissions, isAdminOrSystemAdmin);
         }
 
         public async Task<EstimationRequestResponseDto> CreateRequestAsync(CreateEstimationRequestDto dto, string userId)
@@ -368,12 +376,12 @@ namespace backend.Services
 
         private EstimationRequestResponseDto MapToResponseDto(EstimationRequest request)
         {
-            return MapToResponseDto(request, true);
+            return MapToResponseDto(request, true, null, false);
         }
 
-        private EstimationRequestResponseDto MapToResponseDto(EstimationRequest request, bool includeReport)
+        private EstimationRequestResponseDto MapToResponseDto(EstimationRequest request, bool includeReport, List<string>? userPermissions, bool isAdminOrSystemAdmin)
         {
-            var attachmentDtos = request.Attachments?.Select(a => new DTOs.AttachmentDto
+            var allAttachments = request.Attachments?.Select(a => new DTOs.AttachmentDto
             {
                 Id = a.Id,
                 FileName = a.FileName,
@@ -381,10 +389,67 @@ namespace backend.Services
                 DocumentType = a.DocumentType
             }).ToList() ?? new List<DTOs.AttachmentDto>();
 
+            // Permission-based filtering of attachments
+            // - RequestsViewEstimation: can see all estimation documents (Excel, Report, Photo) AND can select/send.
+            //                          The frontend renders checkboxes on those files plus a Send button.
+            // - RequestsViewFilteredEstimation: can see GENERAL attachments (Construction Permit, Land Deed, Floor Plan, etc.)
+            //                          in the main Attachments grid. The selected/filtered estimation files are
+            //                          exposed separately via FilteredEstimationAttachments and rendered by the frontend
+            //                          in a dedicated "Filtered Estimation Documents" section below.
+            // - Other users: estimation documents are hidden from the main grid.
+            var hasViewEstimation = isAdminOrSystemAdmin
+                                    || (userPermissions != null && userPermissions.Contains(Permissions.RequestsViewEstimation));
+            var hasViewFilteredEstimation = isAdminOrSystemAdmin
+                                            || (userPermissions != null && userPermissions.Contains(Permissions.RequestsViewFilteredEstimation));
+
+            var attachmentDtos = allAttachments;
             if (!includeReport)
             {
-                var hiddenReportTypes = new[] { "Estimation Excel", "Relevant Photo", "Estimation Report" };
-                attachmentDtos = attachmentDtos.Where(a => !hiddenReportTypes.Contains(a.DocumentType)).ToList();
+                if (!hasViewEstimation)
+                {
+                    // For users without RequestsViewEstimation the main Attachments grid must only contain
+                    // GENERAL attachments. Estimation files (Estimation Excel, Relevant Photo, Estimation Report)
+                    // are only ever surfaced through the dedicated "Filtered Estimation Documents" section,
+                    // which is populated from the FilteredEstimationAttachments records below.
+                    attachmentDtos = allAttachments
+                        .Where(a => !EstimationDocumentTypes.Contains(a.DocumentType))
+                        .ToList();
+                }
+                // If user has ViewEstimation -> see everything in the main grid
+                //   (default attachmentDtos = allAttachments, including estimation files).
+            }
+
+            // For users with RequestsViewEstimation, expose the selectable ids + the currently filtered ids.
+            // For users with RequestsViewFilteredEstimation, also expose the currently filtered ids so the
+            // dedicated "Filtered Estimation Documents" section can render them.
+            List<int> selectableIds = new();
+            List<int> filteredIdsList = new();
+            List<DTOs.AttachmentDto> filteredAttachmentDtos = new();
+            if (hasViewEstimation)
+            {
+                selectableIds = allAttachments
+                    .Where(a => EstimationDocumentTypes.Contains(a.DocumentType))
+                    .Select(a => a.Id)
+                    .ToList();
+                filteredIdsList = _context.FilteredEstimationAttachments
+                    .Where(f => f.EstimationRequestId == request.Id)
+                    .Select(f => f.AttachmentId)
+                    .ToList();
+                var filteredIdsSet = filteredIdsList.ToHashSet();
+                filteredAttachmentDtos = allAttachments
+                    .Where(a => filteredIdsSet.Contains(a.Id))
+                    .ToList();
+            }
+            else if (hasViewFilteredEstimation)
+            {
+                filteredIdsList = _context.FilteredEstimationAttachments
+                    .Where(f => f.EstimationRequestId == request.Id)
+                    .Select(f => f.AttachmentId)
+                    .ToList();
+                var filteredIdsSet = filteredIdsList.ToHashSet();
+                filteredAttachmentDtos = allAttachments
+                    .Where(a => filteredIdsSet.Contains(a.Id))
+                    .ToList();
             }
 
             return new EstimationRequestResponseDto
@@ -416,13 +481,15 @@ namespace backend.Services
                 EngineerAssignmentDate = request.EngineerAssignmentDate,
                 Location = $"{request.City}, {request.SubCity}, Kebele {request.Kebele}",
                 Attachments = attachmentDtos,
+                FilteredEstimationAttachments = filteredAttachmentDtos,
+                FilteredAttachmentIds = filteredIdsList,
+                SelectableAttachmentIds = selectableIds,
                 CheckerActionDate = request.CheckerActionDate,
                 CheckerActionDescription = request.CheckerActionDescription,
                 CheckerRejectionReason = request.CheckerRejectionReason,
                 ManagerActionDate = request.ManagerActionDate,
                 ManagerActionDescription = request.ManagerActionDescription,
-                ManagerRejectionReason = request.ManagerRejectionReason
-                ,
+                ManagerRejectionReason = request.ManagerRejectionReason,
                 ProjectFinanceDocType = request.ProjectFinanceDocType,
                 BillOfPenalty = request.BillOfPenalty
             };

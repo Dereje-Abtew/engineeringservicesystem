@@ -30,6 +30,9 @@ export interface EstimationRequest {
   engineerAssignmentDate?: string;
   attachments: Attachment[];
   reportId?: number;
+  filteredEstimationAttachments?: Attachment[];
+  filteredAttachmentIds?: number[];
+  selectableAttachmentIds?: number[];
   checkerActionDate?: string;
   checkerActionDescription?: string;
   checkerRejectionReason?: string;

@@ -33,6 +33,11 @@ namespace backend.DTOs
         public List<AttachmentDto> Attachments { get; set; } = new();
         public int? ReportId { get; set; }
 
+        // Filtered Estimation Attachments
+        public List<AttachmentDto> FilteredEstimationAttachments { get; set; } = new();
+        public List<int> FilteredAttachmentIds { get; set; } = new();
+        public List<int> SelectableAttachmentIds { get; set; } = new();
+
         // Project Finance fields
         public string? ProjectFinanceDocType { get; set; }
         public bool? BillOfPenalty { get; set; }

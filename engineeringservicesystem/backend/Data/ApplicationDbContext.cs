@@ -17,6 +17,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<EngineeringReport> EngineeringReports { get; set; }
     public DbSet<Department> Departments { get; set; }
     public DbSet<Branch> Branches { get; set; }
+    public DbSet<FilteredEstimationAttachment> FilteredEstimationAttachments { get; set; }
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
@@ -70,5 +71,18 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             .HasMany(e => e.Attachments)
             .WithOne(a => a.EstimationRequest)
             .HasForeignKey(a => a.EstimationRequestId);
+
+        // FilteredEstimationAttachment relationships
+        builder.Entity<FilteredEstimationAttachment>()
+            .HasOne(f => f.EstimationRequest)
+            .WithMany()
+            .HasForeignKey(f => f.EstimationRequestId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<FilteredEstimationAttachment>()
+            .HasOne(f => f.Attachment)
+            .WithMany()
+            .HasForeignKey(f => f.AttachmentId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 }
