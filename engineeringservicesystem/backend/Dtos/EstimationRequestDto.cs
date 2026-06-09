@@ -52,6 +52,15 @@ namespace backend.DTOs
         public DateTime? ManagerActionDate { get; set; }
         public string? ManagerActionDescription { get; set; }
         public string? ManagerRejectionReason { get; set; }
+
+        // Resend workflow audit fields - returned in the response so the
+        // frontend can show "Last Rejection" info even after the request
+        // has been re-submitted (status reset to Pending).
+        public string? LastRejectionReason { get; set; }
+        public DateTime? LastRejectionDate { get; set; }
+        public string? LastRejectionBy { get; set; }
+        public DateTime? ResentAt { get; set; }
+        public int ResendCount { get; set; } = 0;
     }
 
     public class CreateEstimationRequestDto
@@ -59,7 +68,7 @@ namespace backend.DTOs
         [Required] public string ApplicantName { get; set; } = string.Empty;
         [Required] public string OwnerName { get; set; } = string.Empty;
         [Required] public string LHUNo { get; set; } = string.Empty;
-        
+
         [Required] public string City { get; set; } = string.Empty;
         [Required] public string SubCity { get; set; } = string.Empty;
         [Required] public string Kebele { get; set; } = string.Empty;
@@ -67,24 +76,24 @@ namespace backend.DTOs
         [Required] public double Longitude { get; set; }
 
         [Required] public double PlotArea { get; set; }
-        
-        [Required] 
-        public string BuildingType { get; set; } = string.Empty;  // String like "Condominium", "Commercial"
-        
-        [Required] 
-        public string Purpose { get; set; } = string.Empty;       // String like "Mortgage", "Guarantee", "Loan", "Foreclosure"
-        
-        [Required] 
-        public string Type { get; set; } = string.Empty;          // String like "NewEstimation", "ReEstimation"
-        
+
+        [Required]
+        public string BuildingType { get; set; } = string.Empty;
+
+        [Required]
+        public string Purpose { get; set; } = string.Empty;
+
+        [Required]
+        public string Type { get; set; } = string.Empty;
+
         public string? BranchUserId { get; set; }
-        
+
         public List<AttachmentUploadDto> Attachments { get; set; } = new();
-        // Project Finance fields (optional)
         public string? ProjectFinanceDocType { get; set; }
         public bool? BillOfPenalty { get; set; }
     }
 
+    // Used when the maker edits & resends a rejected request.
     public class UpdateEstimationRequestDto
     {
         public int Id { get; set; }
@@ -100,6 +109,9 @@ namespace backend.DTOs
         public string BuildingType { get; set; } = string.Empty;
         public string Purpose { get; set; } = string.Empty;
         public string Type { get; set; } = string.Empty;
+        public string? ProjectFinanceDocType { get; set; }
+        public bool? BillOfPenalty { get; set; }
+        public string? MakerRemark { get; set; }
     }
 
     public class AttachmentDto

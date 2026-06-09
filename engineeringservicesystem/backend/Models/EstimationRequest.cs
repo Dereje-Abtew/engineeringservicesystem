@@ -69,7 +69,7 @@ public class EstimationRequest
     public DateTime? ManagerActionDate { get; set; }
     public string? ManagerActionDescription { get; set; }
     public string? ManagerRejectionReason { get; set; }
-    
+
     // Engineer Assignment Fields
     public string? AssignedEngineerId { get; set; }
     public ApplicationUser? AssignedEngineer { get; set; }
@@ -77,4 +77,12 @@ public class EstimationRequest
     // Project Finance specific fields
     public string? ProjectFinanceDocType { get; set; }
     public bool? BillOfPenalty { get; set; }
+
+    // Resend workflow fields - keep the workflow trail visible
+    // after the maker edits & resubmits a rejected request.
+    public string? LastRejectionReason { get; set; }
+    public DateTime? LastRejectionDate { get; set; }
+    public string? LastRejectionBy { get; set; }
+    public DateTime? ResentAt { get; set; }
+    public int ResendCount { get; set; } = 0;
 }

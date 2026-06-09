@@ -50,7 +50,9 @@ export function usePermissions() {
   };
 
   const canManagerApprove = (requestStatus: number): boolean => {
-    return hasPermission('Permissions.Requests.Approve') && requestStatus === 1;
+    // Manager-level approvals should only be available to users with manager/admin roles
+    const isManagerRole = user?.role === 'Manager' || user?.role === 'Admin' || user?.role === 'SystemAdmin';
+    return isManagerRole && hasPermission('Permissions.Requests.Approve') && requestStatus === 1;
   };
 
   const canRejectRequest = (requestStatus: number): boolean => {
@@ -58,7 +60,8 @@ export function usePermissions() {
   };
 
   const canManagerReject = (requestStatus: number): boolean => {
-    return hasPermission('Permissions.Requests.Reject') && requestStatus === 1;
+    const isManagerRole = user?.role === 'Manager' || user?.role === 'Admin' || user?.role === 'SystemAdmin';
+    return isManagerRole && hasPermission('Permissions.Requests.Reject') && requestStatus === 1;
   };
 
   const canAssignRequest = (requestStatus: number, hasEngineer: boolean): boolean => {
@@ -75,6 +78,19 @@ export function usePermissions() {
 
   const canEditEstimation = (requestStatus: number, assignedToMe: boolean, hasReport: boolean): boolean => {
     return hasPermission('Permissions.Requests.Estimate') && assignedToMe && (requestStatus === 4 || hasReport);
+  };
+
+  /**
+   * The maker (the user who created the request) can resend a
+   * rejected request. We check:
+   *  - Status is 5 (Rejected)
+   *  - The user has the Create permission (same permission used by
+   *    the backend's Resend endpoint)
+   *  - The user is the BranchUser of the request (only the maker
+   *    can edit & resend their own rejected request)
+   */
+  const canResendRejectedRequest = (requestStatus: number, isOwner: boolean): boolean => {
+    return hasPermission('Permissions.Requests.Create') && requestStatus === 5 && isOwner;
   };
 
   return {
@@ -95,6 +111,7 @@ export function usePermissions() {
     canManageWorkload,
     canEstimateRequest,
     canEditEstimation,
+    canResendRejectedRequest,
     canViewEstimationReport,
     userPermissions: user?.permissions || [],
   };

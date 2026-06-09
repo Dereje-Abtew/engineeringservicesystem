@@ -185,6 +185,11 @@ namespace backend.Services
             request.Status = RequestStatus.Rejected;
             request.CheckerActionDate = dto.CheckerRejectionDate;
             request.CheckerRejectionReason = dto.CheckerReason;
+            // Track the most-recent rejection on top-level fields so the
+            // audit trail is preserved even after the maker edits & resends.
+            request.LastRejectionReason = dto.CheckerReason;
+            request.LastRejectionDate = dto.CheckerRejectionDate;
+            request.LastRejectionBy = "Checker";
 
             await _context.SaveChangesAsync();
             return true;
@@ -215,6 +220,11 @@ namespace backend.Services
             request.Status = RequestStatus.Rejected;
             request.ManagerActionDate = dto.ManagerRejectionDate;
             request.ManagerRejectionReason = dto.ManagerReason;
+            // Track the most-recent rejection on top-level fields so the
+            // audit trail is preserved even after the maker edits & resends.
+            request.LastRejectionReason = dto.ManagerReason;
+            request.LastRejectionDate = dto.ManagerRejectionDate;
+            request.LastRejectionBy = "Manager";
 
             await _context.SaveChangesAsync();
             return true;
@@ -374,6 +384,133 @@ namespace backend.Services
             return true;
         }
 
+        // =================================================================
+        // RESEND WORKFLOW
+        // The maker edits the data of a rejected request and re-submits it.
+        // The status is reset to Pending (0) so the workflow restarts at the
+        // Checker step. The rejection reason/date are kept in the audit
+        // fields and copied to top-level "LastRejection*" fields so the
+        // workflow trail is preserved across the resend.
+        // =================================================================
+        public async Task<(bool Succeeded, string? ErrorMessage)> ResendRequestAsync(int id, UpdateEstimationRequestDto dto, string userId)
+        {
+            var request = await _context.EstimationRequests
+                .FirstOrDefaultAsync(r => r.Id == id);
+
+            if (request == null) return (false, "Estimation request not found");
+
+            // Only the original maker (BranchUser) can resend their rejected request.
+            if (!string.IsNullOrEmpty(request.BranchUserId) && request.BranchUserId != userId)
+                return (false, "You are not allowed to resend this request");
+
+            if (request.Status != RequestStatus.Rejected)
+                return (false, "Only rejected requests can be resent");
+
+            // Update the editable fields with the new data from the maker.
+            request.ApplicantName = dto.ApplicantName;
+            request.OwnerName = dto.OwnerName;
+            request.LHUNo = dto.LHUNo;
+            request.City = dto.City;
+            request.SubCity = dto.SubCity;
+            request.Kebele = dto.Kebele;
+            request.Latitude = dto.Latitude;
+            request.Longitude = dto.Longitude;
+            request.PlotArea = dto.PlotArea;
+
+            request.BuildingType = dto.BuildingType?.ToLower() switch
+            {
+                "condominium" => TypeOfBuilding.Condominium,
+                "commercial" => TypeOfBuilding.Commercial,
+                _ => request.BuildingType
+            };
+            request.Purpose = dto.Purpose?.ToLower() switch
+            {
+                "mortgage" => PurposeOfEstimation.Mortgage,
+                "guarantee" => PurposeOfEstimation.Guarantee,
+                "loan" => PurposeOfEstimation.Loan,
+                "foreclosure" => PurposeOfEstimation.Foreclosure,
+                "project finance" => PurposeOfEstimation.ProjectFinance,
+                _ => request.Purpose
+            };
+            request.Type = dto.Type?.ToLower() switch
+            {
+                "newestimation" => TypeOfEstimation.NewEstimation,
+                "reestimation" => TypeOfEstimation.ReEstimation,
+                _ => request.Type
+            };
+
+            request.ProjectFinanceDocType = dto.ProjectFinanceDocType;
+            request.BillOfPenalty = dto.BillOfPenalty;
+
+            // Reset status to Pending so the workflow restarts at the Checker.
+            request.Status = RequestStatus.Pending;
+
+            // Keep the audit trail of the previous rejection on top-level fields
+            // so it remains visible after the workflow resumes.
+            // (CheckerRejectionReason / ManagerRejectionReason are preserved as-is.)
+
+            // Track the resend itself.
+            request.ResentAt = DateTime.UtcNow;
+            request.ResendCount += 1;
+
+            await _context.SaveChangesAsync();
+            return (true, null);
+        }
+
+        public async Task<(bool Succeeded, string? ErrorMessage)> UpdateRequestAsync(int id, UpdateEstimationRequestDto dto, string userId)
+        {
+            var request = await _context.EstimationRequests
+                .FirstOrDefaultAsync(r => r.Id == id);
+
+            if (request == null) return (false, "Estimation request not found");
+
+            // Only the original maker (BranchUser) can update their pending request.
+            if (!string.IsNullOrEmpty(request.BranchUserId) && request.BranchUserId != userId)
+                return (false, "You are not allowed to update this request");
+
+            if (request.Status != RequestStatus.Pending)
+                return (false, "Only pending requests can be edited");
+
+            // Update editable fields without changing workflow status.
+            request.ApplicantName = dto.ApplicantName;
+            request.OwnerName = dto.OwnerName;
+            request.LHUNo = dto.LHUNo;
+            request.City = dto.City;
+            request.SubCity = dto.SubCity;
+            request.Kebele = dto.Kebele;
+            request.Latitude = dto.Latitude;
+            request.Longitude = dto.Longitude;
+            request.PlotArea = dto.PlotArea;
+
+            request.BuildingType = dto.BuildingType?.ToLower() switch
+            {
+                "condominium" => TypeOfBuilding.Condominium,
+                "commercial" => TypeOfBuilding.Commercial,
+                _ => request.BuildingType
+            };
+            request.Purpose = dto.Purpose?.ToLower() switch
+            {
+                "mortgage" => PurposeOfEstimation.Mortgage,
+                "guarantee" => PurposeOfEstimation.Guarantee,
+                "loan" => PurposeOfEstimation.Loan,
+                "foreclosure" => PurposeOfEstimation.Foreclosure,
+                "project finance" => PurposeOfEstimation.ProjectFinance,
+                _ => request.Purpose
+            };
+            request.Type = dto.Type?.ToLower() switch
+            {
+                "newestimation" => TypeOfEstimation.NewEstimation,
+                "reestimation" => TypeOfEstimation.ReEstimation,
+                _ => request.Type
+            };
+
+            request.ProjectFinanceDocType = dto.ProjectFinanceDocType;
+            request.BillOfPenalty = dto.BillOfPenalty;
+
+            await _context.SaveChangesAsync();
+            return (true, null);
+        }
+
         private EstimationRequestResponseDto MapToResponseDto(EstimationRequest request)
         {
             return MapToResponseDto(request, true, null, false);
@@ -390,13 +527,6 @@ namespace backend.Services
             }).ToList() ?? new List<DTOs.AttachmentDto>();
 
             // Permission-based filtering of attachments
-            // - RequestsViewEstimation: can see all estimation documents (Excel, Report, Photo) AND can select/send.
-            //                          The frontend renders checkboxes on those files plus a Send button.
-            // - RequestsViewFilteredEstimation: can see GENERAL attachments (Construction Permit, Land Deed, Floor Plan, etc.)
-            //                          in the main Attachments grid. The selected/filtered estimation files are
-            //                          exposed separately via FilteredEstimationAttachments and rendered by the frontend
-            //                          in a dedicated "Filtered Estimation Documents" section below.
-            // - Other users: estimation documents are hidden from the main grid.
             var hasViewEstimation = isAdminOrSystemAdmin
                                     || (userPermissions != null && userPermissions.Contains(Permissions.RequestsViewEstimation));
             var hasViewFilteredEstimation = isAdminOrSystemAdmin
@@ -407,18 +537,14 @@ namespace backend.Services
             {
                 if (!hasViewEstimation)
                 {
-                    // For users without RequestsViewEstimation the main Attachments grid must only contain
-                    // GENERAL attachments. Estimation files (Estimation Excel, Relevant Photo, Estimation Report)
-                    // are only ever surfaced through the dedicated "Filtered Estimation Documents" section,
-                    // which is populated from the FilteredEstimationAttachments records below.
                     attachmentDtos = allAttachments
                         .Where(a => !EstimationDocumentTypes.Contains(a.DocumentType))
                         .ToList();
                 }
-                // If user has ViewEstimation -> see everything in the main grid
-                //   (default attachmentDtos = allAttachments, including estimation files).
             }
 
+            // For users with RequestsViewEstimation, expose the selectable ids + the currently filtered ids.
+            // For
             // For users with RequestsViewEstimation, expose the selectable ids + the currently filtered ids.
             // For users with RequestsViewFilteredEstimation, also expose the currently filtered ids so the
             // dedicated "Filtered Estimation Documents" section can render them.
@@ -491,7 +617,12 @@ namespace backend.Services
                 ManagerActionDescription = request.ManagerActionDescription,
                 ManagerRejectionReason = request.ManagerRejectionReason,
                 ProjectFinanceDocType = request.ProjectFinanceDocType,
-                BillOfPenalty = request.BillOfPenalty
+                BillOfPenalty = request.BillOfPenalty,
+                LastRejectionReason = request.LastRejectionReason,
+                LastRejectionDate = request.LastRejectionDate,
+                LastRejectionBy = request.LastRejectionBy,
+                ResentAt = request.ResentAt,
+                ResendCount = request.ResendCount
             };
         }
     }

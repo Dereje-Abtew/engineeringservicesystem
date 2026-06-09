@@ -3,89 +3,44 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import {
-  Typography,
-  Box,
-  Paper,
-  Chip,
-  Button,
-  Divider,
-  List,
-  ListItem,
-  ListItemText,
-  ListItemIcon,
-  TextField,
-  Alert,
-  CircularProgress,
-  Stack,
-  Grid,
-  IconButton,
-  Breadcrumbs,
-  Checkbox,
-  FormControlLabel,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  DialogContentText
+  Typography, Box, Paper, Chip, Button, List, ListItem, ListItemText, ListItemIcon,
+  TextField, Alert, CircularProgress, Stack, Grid, IconButton, Breadcrumbs,
+  Checkbox, Dialog, DialogTitle, DialogContent, DialogActions, DialogContentText,
+  Select, MenuItem, FormControl, InputLabel, type SelectChangeEvent,
 } from '@mui/material';
 import { useParams, useRouter } from 'next/navigation';
 import {
-  FileText,
-  Download,
-  CheckCircle2,
-  Clock,
-  Building,
-  MapPin,
-  FileEdit,
-  Send,
-  ChevronLeft,
-  Calendar,
-  DollarSign,
-  Filter
+  FileText, Download, CheckCircle2, CheckCircle, Building, MapPin, ChevronLeft,
+  Calendar, Filter, History, RotateCcw, Save, XCircle as XCircleIcon,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/store';
 import { Permissions } from '@/constants/permissions';
 import api from '@/utils/api';
 import Link from 'next/link';
 
-interface Attachment {
-  id?: number;
-  fileName: string;
-  fileUrl: string;
-  documentType: string;
-}
-
-interface EngineeringReport {
-  remarks: string;
-  estimatedValue: number;
-  siteVisitDate: string;
-}
-
+interface Attachment { id?: number; fileName: string; fileUrl: string; documentType: string; }
+interface EngineeringReport { remarks: string; estimatedValue: number; siteVisitDate: string; }
 interface EstimationRequest {
-  id: number;
-  applicantName: string;
-  ownerName: string;
-  location?: string;
-  city: string;
-  subCity: string;
-  kebele: string;
-  typeOfBuilding: string;
-  status: number;
-  createdAt: string;
-  attachments: Attachment[];
-  report?: EngineeringReport;
-  filteredEstimationAttachments?: Attachment[];
-  filteredAttachmentIds?: number[];
-  selectableAttachmentIds?: number[];
+  id: number; applicantName: string; ownerName: string; location?: string;
+  city: string; subCity: string; kebele: string; typeOfBuilding: string;
+  status: number; createdAt: string; lhuNo: string; plotArea: number;
+  purpose: string; type: string; attachments: Attachment[];
+  report?: EngineeringReport; filteredEstimationAttachments?: Attachment[];
+  filteredAttachmentIds?: number[]; selectableAttachmentIds?: number[];
+  checkerRejectionReason?: string; checkerActionDate?: string;
+  managerRejectionReason?: string; managerActionDate?: string;
+  lastRejectionReason?: string; lastRejectionDate?: string;
+  lastRejectionBy?: string; resentAt?: string; resendCount?: number;
+  projectFinanceDocType?: string; billOfPenalty?: boolean;
+}
+interface ResendFormValues {
+  applicantName: string; ownerName: string; lhuNo: string;
+  city: string; subCity: string; kebele: string; plotArea: string;
+  buildingType: string; purpose: string; type: string;
+  projectFinanceDocType: string; billOfPenalty: boolean; makerRemark: string;
 }
 
-// Document types that can be selected/sent for filtered estimation view
-const SELECTABLE_DOCUMENT_TYPES = new Set<string>([
-  'Estimation Excel',
-  'Relevant Photo',
-  'Estimation Report'
-]);
-
+const SELECTABLE_DOCUMENT_TYPES = new Set<string>(['Estimation Excel', 'Relevant Photo', 'Estimation Report']);
 const statusMap: Record<number, { label: string; bg: string; color: string }> = {
   0: { label: 'Pending', bg: 'rgba(241, 179, 28, 0.1)', color: '#f1b31c' },
   1: { label: 'Checker Approved', bg: 'rgba(16, 185, 129, 0.1)', color: '#10b981' },
@@ -94,29 +49,35 @@ const statusMap: Record<number, { label: string; bg: string; color: string }> = 
   4: { label: 'Estimated', bg: 'rgba(16, 185, 129, 0.1)', color: '#10b981' },
   5: { label: 'Rejected', bg: 'rgba(254, 226, 226, 0.75)', color: '#dc2626' }
 };
+const BUILDING_TYPE_OPTIONS = ['Condominium', 'Commercial'];
+const PURPOSE_OPTIONS = ['Mortgage', 'Guarantee', 'Loan', 'Foreclosure', 'Project Finance'];
+const TYPE_OPTIONS = ['NewEstimation', 'ReEstimation'];
 
 export default function RequestDetailPage() {
   const { id } = useParams();
-  const { user, hasPermission } = useAuthStore();
+  const { hasPermission } = useAuthStore();
   const router = useRouter();
   const [request, setRequest] = useState<EstimationRequest | null>(null);
   const [loading, setLoading] = useState(true);
-  const [reportForm, setReportForm] = useState({
-    remarks: '',
-    estimatedValue: 0,
-    siteVisitDate: new Date().toISOString().split('T')[0]
-  });
+  const [reportForm, setReportForm] = useState({ remarks: '', estimatedValue: 0, siteVisitDate: new Date().toISOString().split('T')[0] });
   const [submitting, setSubmitting] = useState(false);
   const [sendingFilter, setSendingFilter] = useState(false);
+  const [resending, setResending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
-
-  // Dialog states for warnings
   const [estimationExcelWarningOpen, setEstimationExcelWarningOpen] = useState(false);
   const [estimationExcelPendingId, setEstimationExcelPendingId] = useState<number | null>(null);
   const [sendWarningOpen, setSendWarningOpen] = useState(false);
-
-  // Selected attachment ids for the filter (used by users with Requests.ViewEstimation permission)
+  const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
+  const [rejectType, setRejectType] = useState<'checker' | 'manager' | null>(null);
+  const [rejecting, setRejecting] = useState(false);
+  const [resendOpen, setResendOpen] = useState(false);
+  const [resendForm, setResendForm] = useState<ResendFormValues>({
+    applicantName: '', ownerName: '', lhuNo: '', city: '', subCity: '', kebele: '',
+    plotArea: '', buildingType: 'Condominium', purpose: 'Mortgage', type: 'NewEstimation',
+    projectFinanceDocType: '', billOfPenalty: false, makerRemark: '',
+  });
   const [selectedFilterIds, setSelectedFilterIds] = useState<number[]>([]);
 
   const fetchRequest = useCallback(async () => {
@@ -125,571 +86,491 @@ export default function RequestDetailPage() {
       const data = await api.get<EstimationRequest>(`/EstimationRequests/${id}`);
       setRequest(data);
       if (data.report) {
-        setReportForm({
-          remarks: data.report.remarks,
-          estimatedValue: data.report.estimatedValue,
-          siteVisitDate: data.report.siteVisitDate.split('T')[0]
-        });
+        setReportForm({ remarks: data.report.remarks, estimatedValue: data.report.estimatedValue, siteVisitDate: data.report.siteVisitDate.split('T')[0] });
       }
-      // Initialize the selected ids from the server
       setSelectedFilterIds(data.filteredAttachmentIds ?? []);
     } catch (err: unknown) {
       const e = err as { message?: string };
       setError(e.message || 'Failed to load request');
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   }, [id]);
-
-  useEffect(() => {
-    fetchRequest();
-  }, [fetchRequest]);
+  useEffect(() => { fetchRequest(); }, [fetchRequest]);
 
   const handleSubmitReport = async () => {
     setSubmitting(true);
     try {
-      await api.put(`/EstimationRequests/${id}/report`, {
-        estimationRequestId: Number(id),
-        ...reportForm
-      });
+      await api.put(`/EstimationRequests/${id}/report`, { estimationRequestId: Number(id), ...reportForm });
       await fetchRequest();
-    } catch (err: unknown) {
-      const e = err as { message?: string };
-      setError(e.message || 'Failed to submit report');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  // Send selected filtered estimation attachments to the server
-  const handleSendFilter = async () => {
-    // Check if any selected attachments are "Estimation Excel"
-    const hasEstimationExcel = (request?.attachments ?? []).some(
-      a => a.id != null && selectedFilterIds.includes(a.id) && a.documentType === 'Estimation Excel'
-    );
-
-    if (hasEstimationExcel) {
-      setSendWarningOpen(true);
-    } else {
-      await performSendFilter();
-    }
+    } catch (err: unknown) { const e = err as { message?: string }; setError(e.message || 'Failed to submit report'); }
+    finally { setSubmitting(false); }
   };
 
   const performSendFilter = async () => {
-    setSendingFilter(true);
-    setError(null);
-    setSuccessMsg(null);
+    setSendingFilter(true); setError(null); setSuccessMsg(null);
     try {
-      await api.post('/FilteredEstimationAttachments', {
-        estimationRequestId: Number(id),
-        attachmentIds: selectedFilterIds
-      });
+      await api.post('/FilteredEstimationAttachments', { estimationRequestId: Number(id), attachmentIds: selectedFilterIds });
       setSuccessMsg('Filtered estimation attachments saved successfully');
       await fetchRequest();
-    } catch (err: unknown) {
-      const e = err as { message?: string };
-      setError(e.message || 'Failed to save filtered attachments');
-    } finally {
-      setSendingFilter(false);
-    }
+    } catch (err: unknown) { const e = err as { message?: string }; setError(e.message || 'Failed to save filtered attachments'); }
+    finally { setSendingFilter(false); }
   };
-
-  const handleSendWarningConfirm = async () => {
-    setSendWarningOpen(false);
-    await performSendFilter();
+  const handleSendFilter = async () => {
+    const hasEstimationExcel = (request?.attachments ?? []).some(a => a.id != null && selectedFilterIds.includes(a.id) && a.documentType === 'Estimation Excel');
+    if (hasEstimationExcel) { setSendWarningOpen(true); } else { await performSendFilter(); }
   };
-
-  const handleSendWarningCancel = () => {
-    setSendWarningOpen(false);
-  };
+  const handleSendWarningConfirm = async () => { setSendWarningOpen(false); await performSendFilter(); };
+  const handleSendWarningCancel = () => { setSendWarningOpen(false); };
 
   const toggleFilterSelection = (attachmentId: number) => {
-    // Find the attachment to check its document type
     const attachment = request?.attachments.find(a => a.id === attachmentId);
-    
-    // If it's an "Estimation Excel" document and we're selecting it, show warning
     if (attachment?.documentType === 'Estimation Excel' && !selectedFilterIds.includes(attachmentId)) {
-      setEstimationExcelPendingId(attachmentId);
-      setEstimationExcelWarningOpen(true);
+      setEstimationExcelPendingId(attachmentId); setEstimationExcelWarningOpen(true);
     } else {
-      // Otherwise, proceed with normal toggle
-      setSelectedFilterIds(prev =>
-        prev.includes(attachmentId)
-          ? prev.filter(x => x !== attachmentId)
-          : [...prev, attachmentId]
-      );
+      setSelectedFilterIds(prev => prev.includes(attachmentId) ? prev.filter(x => x !== attachmentId) : [...prev, attachmentId]);
     }
   };
-
   const handleEstimationExcelWarningConfirm = () => {
     if (estimationExcelPendingId !== null) {
-      setSelectedFilterIds(prev => [...prev, estimationExcelPendingId]);
-      setEstimationExcelPendingId(null);
+      setSelectedFilterIds(prev => [...prev, estimationExcelPendingId]); setEstimationExcelPendingId(null);
     }
     setEstimationExcelWarningOpen(false);
   };
+  const handleEstimationExcelWarningCancel = () => { setEstimationExcelPendingId(null); setEstimationExcelWarningOpen(false); };
 
-  const handleEstimationExcelWarningCancel = () => {
-    setEstimationExcelPendingId(null);
-    setEstimationExcelWarningOpen(false);
+  const openRejectDialog = (type: 'checker' | 'manager') => { setRejectType(type); setRejectReason(''); setRejectDialogOpen(true); };
+  const handleRejectConfirm = async () => {
+    if (!rejectReason.trim()) { setError('Please enter a rejection reason'); return; }
+    setRejecting(true); setError(null);
+    try {
+      const endpoint = rejectType === 'checker' ? 'checker-reject' : 'manager-reject';
+      const payload = rejectType === 'checker' ? { checkerRejectionDate: new Date().toISOString(), checkerReason: rejectReason } : { managerRejectionDate: new Date().toISOString(), managerReason: rejectReason };
+      await api.post(`/EstimationRequests/${id}/${endpoint}`, payload);
+      setSuccessMsg('Request rejected successfully. Rejection reason has been recorded.');
+      setRejectDialogOpen(false); setRejectReason(''); setRejectType(null);
+      await fetchRequest();
+    } catch (err: unknown) { const e = err as { message?: string }; setError(e.message || 'Failed to reject request'); }
+    finally { setRejecting(false); }
   };
+  const handleRejectCancel = () => { setRejectDialogOpen(false); setRejectReason(''); setRejectType(null); };
+
+  const openResendDialog = () => {
+    if (!request) return;
+    setResendForm({
+      applicantName: request.applicantName ?? '', ownerName: request.ownerName ?? '',
+      lhuNo: request.lhuNo ?? '', city: request.city ?? '', subCity: request.subCity ?? '',
+      kebele: request.kebele ?? '', plotArea: String(request.plotArea ?? ''),
+      buildingType: request.typeOfBuilding ?? 'Condominium', purpose: request.purpose ?? 'Mortgage',
+      type: request.type ?? 'NewEstimation', projectFinanceDocType: request.projectFinanceDocType ?? '',
+      billOfPenalty: request.billOfPenalty ?? false, makerRemark: '',
+    });
+    setResendOpen(true);
+  };
+  const closeResendDialog = () => setResendOpen(false);
+
+  const handleResendConfirm = async () => {
+    if (!resendForm.applicantName.trim() || !resendForm.ownerName.trim() || !resendForm.lhuNo.trim()) {
+      setError('Please fill in Applicant, Owner, and LHU Number before resending.'); return;
+    }
+    setResending(true); setError(null); setSuccessMsg(null);
+    try {
+      const updated = await api.post<EstimationRequest>(`/EstimationRequests/${id}/resend`, {
+        id: Number(id), applicantName: resendForm.applicantName, ownerName: resendForm.ownerName,
+        lhuNo: resendForm.lhuNo, city: resendForm.city, subCity: resendForm.subCity,
+        kebele: resendForm.kebele, latitude: 0, longitude: 0,
+        plotArea: parseFloat(resendForm.plotArea) || 0,
+        buildingType: resendForm.buildingType, purpose: resendForm.purpose, type: resendForm.type,
+        projectFinanceDocType: resendForm.projectFinanceDocType,
+        billOfPenalty: resendForm.billOfPenalty, makerRemark: resendForm.makerRemark,
+      });
+      setSuccessMsg(`Request #${id} has been updated and re-submitted. The workflow continues from the Checker step.`);
+      setResendOpen(false);
+      if (updated) { setRequest(updated); } else { await fetchRequest(); }
+    } catch (err: unknown) { const e = err as { message?: string }; setError(e.message || 'Failed to resend request'); }
+    finally { setResending(false); }
+  };
+
+  const handleResendFormChange = (field: keyof ResendFormValues, value: string | boolean) => {
+    setResendForm(prev => ({ ...prev, [field]: value }));
+  };
+  const handleResendSelectChange = (field: keyof ResendFormValues) =>
+    (e: SelectChangeEvent<string>) => handleResendFormChange(field, e.target.value);
 
   const canSelectEstimationDocs = hasPermission(Permissions.RequestsViewEstimation);
   const canViewFilteredEstimation = hasPermission(Permissions.RequestsViewFilteredEstimation);
-
-  // Attachments the user can actually select (estimation docs that have an id)
   const selectableAttachments = useMemo(() => {
     if (!request) return [];
-    const selectable = (request.attachments ?? []).filter(
-      a => a.id != null && SELECTABLE_DOCUMENT_TYPES.has(a.documentType)
-    );
-    return selectable;
+    return (request.attachments ?? []).filter(a => a.id != null && SELECTABLE_DOCUMENT_TYPES.has(a.documentType));
   }, [request]);
 
   if (loading) return <DashboardLayout><Box sx={{ display: 'flex', justifyContent: 'center', py: 10 }}><CircularProgress color="secondary" /></Box></DashboardLayout>;
   if (!request) return <DashboardLayout><Alert severity="error">{error || 'Request not found'}</Alert></DashboardLayout>;
 
+  const isRejected = request.status === 5;
+  const rejectionReason = request.checkerRejectionReason || request.managerRejectionReason || request.lastRejectionReason;
+  const rejectedBy = request.checkerRejectionReason ? 'Checker' : (request.managerRejectionReason ? 'Manager' : (request.lastRejectionBy ?? null));
+  const rejectionDate = request.checkerActionDate || request.managerActionDate || request.lastRejectionDate;
+
   return (
     <DashboardLayout>
-      {/* Header Section */}
       <Box sx={{ mb: 5 }}>
         <Breadcrumbs sx={{ mb: 2 }}>
           <Link href="/requests" style={{ textDecoration: 'none', color: '#64748b', fontWeight: 600 }}>Requests</Link>
           <Typography color="text.primary" sx={{ fontWeight: 800 }}>Request Details</Typography>
         </Breadcrumbs>
-
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             <IconButton onClick={() => router.back()} sx={{ bgcolor: 'white', border: '1px solid #e2e8f0' }}>
               <ChevronLeft size={20} color="#064e3b" />
             </IconButton>
             <Box>
-              <Typography variant="h3" fontWeight="900" sx={{ color: '#064e3b', mb: 0.5 }}>
-                Request #{request.id}
-              </Typography>
+              <Typography variant="h3" fontWeight="900" sx={{ color: '#064e3b', mb: 0.5 }}>Request #{request.id}</Typography>
               <Stack direction="row" spacing={1} alignItems="center">
-                <Chip
-                  label={statusMap[request.status]?.label ?? `Status ${request.status}`}
-                  sx={{
-                    bgcolor: statusMap[request.status]?.bg ?? 'rgba(241, 241, 241, 0.9)',
-                    color: statusMap[request.status]?.color ?? '#334155',
-                    fontWeight: 800,
-                    borderRadius: '8px'
-                  }}
-                />
-                <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 600 }}>
-                  Submitted on {new Date(request.createdAt).toLocaleDateString()}
-                </Typography>
+                <Chip label={statusMap[request.status]?.label ?? `Status ${request.status}`}
+                  sx={{ bgcolor: statusMap[request.status]?.bg ?? 'rgba(241, 241, 241, 0.9)', color: statusMap[request.status]?.color ?? '#334155', fontWeight: 800, borderRadius: '8px' }} />
+                <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 600 }}>Submitted on {new Date(request.createdAt).toLocaleDateString()}</Typography>
+                {(request.resendCount ?? 0) > 0 && (
+                  <Chip icon={<History size={14} />} label={`Resent ${request.resendCount}x`} size="small"
+                    sx={{ bgcolor: 'rgba(8, 145, 178, 0.1)', color: '#0e7490', fontWeight: 700 }} />
+                )}
               </Stack>
             </Box>
           </Box>
         </Box>
       </Box>
 
-      {error && (
-        <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
-          {error}
+      {error && <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>{error}</Alert>}
+      {successMsg && <Alert severity="success" sx={{ mb: 3 }} onClose={() => setSuccessMsg(null)}>{successMsg}</Alert>}
+
+      {isRejected && (
+        <Alert severity="warning" icon={<XCircleIcon size={20} color="#dc2626" />}
+          sx={{ mb: 3, borderRadius: 0, border: '2px solid #dc2626', bgcolor: 'rgba(254, 226, 226, 0.5)' }}>
+          <Box>
+            <Typography variant="body1" fontWeight="800" sx={{ mb: 1, color: '#7f1d1d' }}>This request was rejected</Typography>
+            {rejectionReason && (
+              <Typography variant="body2" sx={{ color: '#7f1d1d', mb: 1, fontWeight: 500 }}>
+                <strong>{rejectedBy} Reason:</strong> {rejectionReason}
+              </Typography>
+            )}
+            {rejectionDate && (
+              <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', mb: 2 }}>
+                {new Date(rejectionDate).toLocaleDateString()} at {new Date(rejectionDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </Typography>
+            )}
+            <Button variant="contained"
+              startIcon={resending ? <CircularProgress size={18} color="inherit" /> : <RotateCcw size={18} />}
+              onClick={openResendDialog} disabled={resending}
+              sx={{ bgcolor: '#0891b2', color: 'white', fontWeight: 800, borderRadius: 0, py: 1, px: 3, '&:hover': { bgcolor: '#0e7490' } }}>
+              {resending ? 'Resending...' : 'Edit & Resend for Review'}
+            </Button>
+          </Box>
         </Alert>
       )}
-      {successMsg && (
-        <Alert severity="success" sx={{ mb: 3 }} onClose={() => setSuccessMsg(null)}>
-          {successMsg}
+
+      {(request.resendCount ?? 0) > 0 && (
+        <Alert severity="info" sx={{ mb: 3 }} icon={<History size={20} />}>
+          <Typography variant="body2" fontWeight="700">Resend history</Typography>
+          <Typography variant="caption" sx={{ color: '#475569' }}>
+            This request has been resent <strong>{request.resendCount}</strong> time{request.resendCount! > 1 ? 's' : ''}.
+            Last resent at {request.resentAt ? new Date(request.resentAt).toLocaleString() : 'n/a'}.
+            {request.lastRejectionReason && (<> Last rejection reason: <em>{request.lastRejectionReason}</em> (by {request.lastRejectionBy ?? 'reviewer'}).</>)}
+          </Typography>
         </Alert>
       )}
 
       <Grid container spacing={4}>
-        {/* Left Column: Information */}
         <Grid size={{ xs: 12, md: 7 }}>
           <Stack spacing={4}>
-            {/* Customer & Property Card */}
             <Paper elevation={0} sx={{ p: 4, borderRadius: 0, border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
               <Typography variant="h6" fontWeight="900" sx={{ mb: 4, color: '#064e3b', display: 'flex', alignItems: 'center', gap: 1 }}>
                 <Building size={20} /> Property & Applicant
               </Typography>
-
               <Grid container spacing={4}>
                 <Grid size={{ xs: 12, sm: 6 }}>
-                  <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px' }}>Applicant Name</Typography>
+                  <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px' }}>Applicant</Typography>
                   <Typography variant="h6" fontWeight="700" sx={{ color: '#0f172a' }}>{request.applicantName}</Typography>
                 </Grid>
                 <Grid size={{ xs: 12, sm: 6 }}>
-                  <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px' }}>Owner Name</Typography>
+                  <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px' }}>Owner</Typography>
                   <Typography variant="h6" fontWeight="700" sx={{ color: '#0f172a' }}>{request.ownerName}</Typography>
                 </Grid>
                 <Grid size={12}>
-                  <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px' }}>Location Address</Typography>
+                  <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px' }}>LHU</Typography>
+                  <Typography variant="h6" fontWeight="700" sx={{ color: '#0f172a', fontFamily: 'monospace' }}>{request.lhuNo}</Typography>
+                </Grid>
+                <Grid size={12}>
+                  <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px' }}>Location</Typography>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
                     <MapPin size={18} color="#f1b31c" />
-                    <Typography variant="h6" fontWeight="700" sx={{ color: '#0f172a' }}>
-                      {request.location || `${request.city}, ${request.subCity}, Kebele ${request.kebele}`}
-                    </Typography>
+                    <Typography variant="h6" fontWeight="700" sx={{ color: '#0f172a' }}>{request.location || `${request.city}, ${request.subCity}, Kebele ${request.kebele}`}</Typography>
                   </Box>
                 </Grid>
                 <Grid size={{ xs: 12, sm: 6 }}>
-                  <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px' }}>Type of Building</Typography>
+                  <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px' }}>Plot Area</Typography>
+                  <Typography variant="h6" fontWeight="700" sx={{ color: '#0f172a' }}>{request.plotArea?.toLocaleString()} m²</Typography>
+                </Grid>
+                <Grid size={{ xs: 12, sm: 6 }}>
+                  <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px' }}>Building</Typography>
                   <Typography variant="h6" fontWeight="700" sx={{ color: '#0f172a' }}>{request.typeOfBuilding}</Typography>
+                </Grid>
+                <Grid size={{ xs: 12, sm: 6 }}>
+                  <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px' }}>Purpose</Typography>
+                  <Typography variant="h6" fontWeight="700" sx={{ color: '#0f172a' }}>{request.purpose}</Typography>
+                </Grid>
+                <Grid size={{ xs: 12, sm: 6 }}>
+                  <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px' }}>Type</Typography>
+                  <Typography variant="h6" fontWeight="700" sx={{ color: '#0f172a' }}>{request.type}</Typography>
                 </Grid>
               </Grid>
             </Paper>
 
-            {/* Attachments Card */}
             <Paper elevation={0} sx={{ p: 4, borderRadius: 0, border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
               <Typography variant="h6" fontWeight="900" sx={{ mb: 3, color: '#064e3b', display: 'flex', alignItems: 'center', gap: 1 }}>
                 <FileText size={20} /> Documents & Attachments
               </Typography>
-
               <List sx={{ bgcolor: '#f8fafc', borderRadius: '16px', p: 1 }}>
                 {request.attachments.map((file, index) => {
-                  const isSelectable = canSelectEstimationDocs
-                    && file.id != null
-                    && SELECTABLE_DOCUMENT_TYPES.has(file.documentType);
+                  const isSelectable = canSelectEstimationDocs && file.id != null && SELECTABLE_DOCUMENT_TYPES.has(file.documentType);
                   const isSelected = isSelectable && selectedFilterIds.includes(file.id as number);
-
                   return (
-                    <ListItem
-                      key={file.id ?? index}
-                      sx={{
-                        bgcolor: isSelected ? 'rgba(16, 185, 129, 0.06)' : 'white',
-                        mb: 1,
-                        borderRadius: 0,
-                        border: isSelected ? '1px solid #10b981' : '1px solid #f1f5f9'
-                      }}
+                    <ListItem key={file.id ?? index}
+                      sx={{ bgcolor: isSelected ? 'rgba(16, 185, 129, 0.06)' : 'white', mb: 1, borderRadius: 0, border: isSelected ? '1px solid #10b981' : '1px solid #f1f5f9' }}
                       secondaryAction={
-                        <IconButton
-                          component="a"
-                          href={file.fileUrl}
-                          target="_blank"
-                          sx={{ color: '#064e3b', bgcolor: 'rgba(6, 78, 59, 0.05)', '&:hover': { bgcolor: 'rgba(6, 78, 59, 0.1)' } }}
-                        >
+                        <IconButton component="a" href={file.fileUrl} target="_blank" sx={{ color: '#064e3b', bgcolor: 'rgba(6, 78, 59, 0.05)' }}>
                           <Download size={18} />
                         </IconButton>
-                      }
-                    >
+                      }>
                       {isSelectable && (
-                        <Checkbox
-                          checked={isSelected}
-                          onChange={() => toggleFilterSelection(file.id as number)}
-                          sx={{
-                            color: '#10b981',
-                            '&.Mui-checked': { color: '#10b981' },
-                            mr: 1
-                          }}
-                          data-testid={`filter-checkbox-${file.id}`}
-                        />
+                        <Checkbox checked={isSelected} onChange={() => toggleFilterSelection(file.id as number)} sx={{ color: '#10b981', '&.Mui-checked': { color: '#10b981' }, mr: 1 }} />
                       )}
-                      <ListItemIcon sx={{ minWidth: 45 }}>
-                        <FileText color="#64748b" />
-                      </ListItemIcon>
-                      <ListItemText
-                        primary={file.fileName}
-                        secondary={file.documentType}
+                      <ListItemIcon sx={{ minWidth: 45 }}><FileText color="#64748b" /></ListItemIcon>
+                      <ListItemText primary={file.fileName} secondary={file.documentType}
                         primaryTypographyProps={{ fontWeight: 700, color: '#0f172a' }}
-                        secondaryTypographyProps={{ fontWeight: 600, color: '#94a3b8' }}
-                      />
+                        secondaryTypographyProps={{ fontWeight: 600, color: '#94a3b8' }} />
                     </ListItem>
                   );
                 })}
                 {request.attachments.length === 0 && (
-                  <Typography variant="body2" sx={{ color: '#94a3b8', p: 2 }}>
-                    No attachments available.
-                  </Typography>
+                  <Typography variant="body2" sx={{ color: '#94a3b8', p: 2 }}>No attachments available.</Typography>
                 )}
               </List>
-
-              {/* Send filter button: visible only to users with Requests.ViewEstimation permission */}
               {canSelectEstimationDocs && selectableAttachments.length > 0 && (
                 <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end' }}>
-                  <Button
-                    variant="contained"
-                    startIcon={sendingFilter ? <CircularProgress size={18} color="inherit" /> : <Filter size={18} />}
-                    onClick={handleSendFilter}
-                    disabled={sendingFilter}
-                    sx={{
-                      bgcolor: '#064e3b',
-                      color: 'white',
-                      fontWeight: 800,
-                      borderRadius: 0,
-                      '&:hover': { bgcolor: '#065f46' }
-                    }}
-                  >
+                  <Button variant="contained" startIcon={sendingFilter ? <CircularProgress size={18} color="inherit" /> : <Filter size={18} />}
+                    onClick={handleSendFilter} disabled={sendingFilter}
+                    sx={{ bgcolor: '#064e3b', color: 'white', fontWeight: 800, borderRadius: 0, '&:hover': { bgcolor: '#065f46' } }}>
                     {sendingFilter ? 'Sending...' : `Send Filter (${selectedFilterIds.length} selected)`}
                   </Button>
                 </Box>
               )}
             </Paper>
-
-            {/* Filtered Estimation Attachments - for users with Requests.ViewFilteredEstimation */}
-            {canViewFilteredEstimation && (request.filteredEstimationAttachments?.length ?? 0) > 0 && (
-              <Paper elevation={0} sx={{ p: 4, borderRadius: 0, border: '1px solid #10b981', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', bgcolor: 'rgba(16, 185, 129, 0.02)' }}>
-                <Typography variant="h6" fontWeight="900" sx={{ mb: 3, color: '#10b981', display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <CheckCircle2 size={20} /> Filtered Estimation Documents
-                </Typography>
-
-                <List sx={{ bgcolor: '#f8fafc', borderRadius: '16px', p: 1 }}>
-                  {request.filteredEstimationAttachments!.map((file, index) => (
-                    <ListItem
-                      key={file.id ?? index}
-                      sx={{ bgcolor: 'white', mb: 1, borderRadius: 0, border: '1px solid #d1fae5' }}
-                      secondaryAction={
-                        <IconButton
-                          component="a"
-                          href={file.fileUrl}
-                          target="_blank"
-                          sx={{ color: '#10b981', bgcolor: 'rgba(16, 185, 129, 0.05)', '&:hover': { bgcolor: 'rgba(16, 185, 129, 0.1)' } }}
-                        >
-                          <Download size={18} />
-                        </IconButton>
-                      }
-                    >
-                      <ListItemIcon sx={{ minWidth: 45 }}>
-                        <FileText color="#10b981" />
-                      </ListItemIcon>
-                      <ListItemText
-                        primary={file.fileName}
-                        secondary={file.documentType}
-                        primaryTypographyProps={{ fontWeight: 700, color: '#0f172a' }}
-                        secondaryTypographyProps={{ fontWeight: 600, color: '#94a3b8' }}
-                      />
-                    </ListItem>
-                  ))}
-                </List>
-              </Paper>
-            )}
           </Stack>
         </Grid>
 
-        {/* Right Column: Action / Report */}
         <Grid size={{ xs: 12, md: 5 }}>
           <Stack spacing={4}>
-            {/* Prepare Report Form (For users with Approve permission) */}
-            {hasPermission(Permissions.RequestsApprove) && request.status === 0 && (
-              <Paper elevation={0} sx={{ p: 4, borderRadius: 0, border: '2px solid #f1b31c', bgcolor: 'white' }}>
+            {isRejected && (
+              <Paper elevation={0} sx={{ p: 4, borderRadius: 0, border: '2px solid #0891b2', bgcolor: 'rgba(8, 145, 178, 0.02)' }}>
                 <Typography variant="h6" fontWeight="900" sx={{ mb: 1, color: '#064e3b', display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <FileEdit size={20} color="#f1b31c" /> Prepare Valuation Report
+                  <RotateCcw size={20} color="#0891b2" /> Re-submit Request
                 </Typography>
-                <Typography variant="body2" sx={{ color: '#64748b', mb: 4, fontWeight: 500 }}>
-                  Fill in the final valuation details to complete this request.
+                <Typography variant="body2" sx={{ color: '#64748b', mb: 3, fontWeight: 500 }}>
+                  Edit the request data and re-submit it. The workflow will continue from the Checker step.
                 </Typography>
-
-                <Stack spacing={3}>
-                  <Box>
-                    <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 800, textTransform: 'uppercase', mb: 1, display: 'block' }}>Site Visit Date</Typography>
-                    <TextField
-                      fullWidth
-                      type="date"
-                      value={reportForm.siteVisitDate}
-                      onChange={(e) => setReportForm({ ...reportForm, siteVisitDate: e.target.value })}
-                      sx={{ '& .MuiOutlinedInput-root': { borderRadius: 0, bgcolor: '#f8fafc' } }}
-                    />
-                  </Box>
-
-                  <Box>
-                    <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 800, textTransform: 'uppercase', mb: 1, display: 'block' }}>Estimated Value (ETB)</Typography>
-                    <TextField
-                      fullWidth
-                      type="number"
-                      placeholder="Enter amount"
-                      value={reportForm.estimatedValue}
-                      onChange={(e) => setReportForm({ ...reportForm, estimatedValue: Number(e.target.value) })}
-                      InputProps={{
-                        startAdornment: <DollarSign size={18} style={{ marginRight: 8, color: '#94a3b8' }} />,
-                      }}
-                      sx={{ '& .MuiOutlinedInput-root': { borderRadius: 0, bgcolor: '#f8fafc' } }}
-                    />
-                  </Box>
-
-                  <Box>
-                    <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 800, textTransform: 'uppercase', mb: 1, display: 'block' }}>Remarks & Findings</Typography>
-                    <TextField
-                      fullWidth
-                      multiline
-                      rows={4}
-                      placeholder="Describe building condition..."
-                      value={reportForm.remarks}
-                      onChange={(e) => setReportForm({ ...reportForm, remarks: e.target.value })}
-                      sx={{ '& .MuiOutlinedInput-root': { borderRadius: 0, bgcolor: '#f8fafc' } }}
-                    />
-                  </Box>
-
-                  <Button
-                    variant="contained"
-                    size="large"
-                    fullWidth
-                    startIcon={submitting ? <CircularProgress size={20} color="inherit" /> : <Send size={18} />}
-                    onClick={handleSubmitReport}
-                    disabled={submitting}
-                    sx={{
-                      bgcolor: '#064e3b',
-                      color: 'white',
-                      py: 2,
-                      borderRadius: 0,
-                      fontWeight: 800,
-                      boxShadow: '0 10px 15px -3px rgba(6, 78, 59, 0.2)',
-                      '&:hover': { bgcolor: '#065f46' }
-                    }}
-                  >
-                    {submitting ? 'Submitting...' : 'Submit Final Report'}
-                  </Button>
-                </Stack>
+                <Button variant="contained" fullWidth
+                  startIcon={resending ? <CircularProgress size={18} color="inherit" /> : <Save size={18} />}
+                  onClick={openResendDialog} disabled={resending}
+                  sx={{ bgcolor: '#0891b2', color: 'white', fontWeight: 800, py: 1.5, borderRadius: 0, '&:hover': { bgcolor: '#0e7490' } }}>
+                  {resending ? 'Resending...' : 'Edit & Resend for Review'}
+                </Button>
               </Paper>
             )}
 
-            {/* Display Report (If exists) */}
-            {request.report ? (
+            {request.report && (
               <Paper elevation={0} sx={{ p: 4, borderRadius: 0, border: '1px solid #10b981', bgcolor: 'rgba(16, 185, 129, 0.02)' }}>
                 <Typography variant="h6" fontWeight="900" sx={{ mb: 4, color: '#10b981', display: 'flex', alignItems: 'center', gap: 1 }}>
                   <CheckCircle2 size={20} /> Final Valuation Report
                 </Typography>
-
                 <Stack spacing={4}>
                   <Box>
                     <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 800, textTransform: 'uppercase' }}>Estimated Value</Typography>
-                    <Typography variant="h3" fontWeight="900" sx={{ color: '#10b981' }}>
-                      ETB {request.report.estimatedValue.toLocaleString()}
+                    <Typography variant="h3" fontWeight="900" sx={{ color: '#10b981' }}>ETB {request.report.estimatedValue.toLocaleString()}</Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Calendar size={18} color="#64748b" />
+                    <Typography variant="body2" fontWeight="700" sx={{ color: '#0f172a' }}>
+                      Site Visit Conducted on {new Date(request.report.siteVisitDate).toLocaleDateString()}
                     </Typography>
                   </Box>
-
-                  <Grid container spacing={2}>
-                    <Grid size={12}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Calendar size={18} color="#64748b" />
-                        <Typography variant="body2" fontWeight="700" sx={{ color: '#0f172a' }}>
-                          Site Visit Conducted on {new Date(request.report.siteVisitDate).toLocaleDateString()}
-                        </Typography>
-                      </Box>
-                    </Grid>
-                    <Grid size={12}>
-                      <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 800, textTransform: 'uppercase', mb: 1, display: 'block' }}>Remarks</Typography>
-                      <Paper variant="outlined" sx={{ p: 2, borderRadius: 0, bgcolor: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                        <Typography variant="body2" sx={{ color: '#475569', fontWeight: 500, fontStyle: 'italic' }}>
-                          &ldquo;{request.report.remarks}&rdquo;
-                        </Typography>
-                      </Paper>
-                    </Grid>
-                  </Grid>
+                  <Box>
+                    <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 800, textTransform: 'uppercase', mb: 1, display: 'block' }}>Remarks</Typography>
+                    <Paper variant="outlined" sx={{ p: 2, borderRadius: 0, bgcolor: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                      <Typography variant="body2" sx={{ color: '#475569', fontWeight: 500, fontStyle: 'italic' }}>&ldquo;{request.report.remarks}&rdquo;</Typography>
+                    </Paper>
+                  </Box>
                 </Stack>
               </Paper>
-            ) : null}
+            )}
 
-            {/* Status Alert for Branch-level users (those who create requests) */}
-            {hasPermission(Permissions.RequestsCreate) && !request.report && (
-              <Alert
-                icon={<Clock size={20} />}
-                severity="info"
-                sx={{
-                  borderRadius: 0,
-                  bgcolor: 'rgba(241, 179, 28, 0.05)',
-                  color: '#064e3b',
-                  border: '1px solid rgba(241, 179, 28, 0.2)',
-                  '& .MuiAlert-icon': { color: '#f1b31c' }
-                }}
-              >
-                <Typography variant="body2" fontWeight="700">
-                  Waiting for Engineering Report. An engineer has been notified to conduct the site visit and submit valuation findings.
+            {hasPermission(Permissions.RequestsApprove) && request.status === 0 && (
+              <Paper elevation={0} sx={{ p: 4, borderRadius: 0, border: '2px solid #2563eb', bgcolor: 'rgba(37, 99, 235, 0.02)' }}>
+                <Typography variant="h6" fontWeight="900" sx={{ mb: 3, color: '#064e3b', display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <CheckCircle size={20} color="#2563eb" /> Checker Review Action
                 </Typography>
-              </Alert>
+                <Stack direction="row" spacing={2}>
+                  <Button variant="contained" fullWidth onClick={() => router.push('/requests')}
+                    sx={{ bgcolor: '#10b981', color: 'white', fontWeight: 800, borderRadius: 0, py: 1.5, '&:hover': { bgcolor: '#059669' } }}>Approve</Button>
+                  <Button variant="outlined" fullWidth onClick={() => openRejectDialog('checker')}
+                    sx={{ borderColor: '#dc2626', color: '#dc2626', fontWeight: 800, borderRadius: 0, py: 1.5, '&:hover': { bgcolor: 'rgba(220, 38, 38, 0.05)' } }}>Reject</Button>
+                </Stack>
+              </Paper>
+            )}
+
+            {hasPermission(Permissions.RequestsApprove) && request.status === 1 && (
+              <Paper elevation={0} sx={{ p: 4, borderRadius: 0, border: '2px solid #7c3aed', bgcolor: 'rgba(124, 58, 237, 0.02)' }}>
+                <Typography variant="h6" fontWeight="900" sx={{ mb: 3, color: '#064e3b', display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <CheckCircle size={20} color="#7c3aed" /> Manager Review Action
+                </Typography>
+                <Stack direction="row" spacing={2}>
+                  <Button variant="contained" fullWidth onClick={() => router.push('/requests')}
+                    sx={{ bgcolor: '#10b981', color: 'white', fontWeight: 800, borderRadius: 0, py: 1.5, '&:hover': { bgcolor: '#059669' } }}>Approve</Button>
+                  <Button variant="outlined" fullWidth onClick={() => openRejectDialog('manager')}
+                    sx={{ borderColor: '#dc2626', color: '#dc2626', fontWeight: 800, borderRadius: 0, py: 1.5, '&:hover': { bgcolor: 'rgba(220, 38, 38, 0.05)' } }}>Reject</Button>
+                </Stack>
+              </Paper>
             )}
           </Stack>
         </Grid>
       </Grid>
 
-      {/* Warning Dialog for Estimation Excel Selection */}
-      <Dialog
-        open={estimationExcelWarningOpen}
-        onClose={handleEstimationExcelWarningCancel}
-        maxWidth="sm"
-        fullWidth
-      >
-        <DialogTitle sx={{ fontWeight: 900, color: '#f1b31c', backgroundColor: 'rgba(241, 179, 28, 0.1)' }}>
-          ⚠️ Estimation Excel - Sensitive Document
-        </DialogTitle>
+      <Dialog open={estimationExcelWarningOpen} onClose={handleEstimationExcelWarningCancel} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ fontWeight: 900, color: '#f1b31c', backgroundColor: 'rgba(241, 179, 28, 0.1)' }}>Estimation Excel - Sensitive Document</DialogTitle>
         <DialogContent sx={{ pt: 3 }}>
           <DialogContentText sx={{ color: '#0f172a', fontWeight: 500, mb: 2 }}>
             You are about to select the <strong>"Estimation Excel"</strong> document, which is highly sensitive.
           </DialogContentText>
-          <DialogContentText sx={{ color: '#475569' }}>
-            Please ensure you have the necessary permissions and that this action is intended. Estimation Excel documents contain confidential financial information and should be handled with care.
-          </DialogContentText>
+          <DialogContentText sx={{ color: '#475569' }}>Please ensure you have the necessary permissions and that this action is intended.</DialogContentText>
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
-          <Button
-            onClick={handleEstimationExcelWarningCancel}
-            variant="outlined"
-            sx={{
-              borderColor: '#e2e8f0',
-              color: '#64748b',
-              borderRadius: 0,
-              fontWeight: 700,
-              '&:hover': { bgcolor: '#f8fafc' }
-            }}
-          >
-            Cancel
-          </Button>
-          <Button
-            onClick={handleEstimationExcelWarningConfirm}
-            variant="contained"
-            sx={{
-              bgcolor: '#f1b31c',
-              color: '#0f172a',
-              borderRadius: 0,
-              fontWeight: 700,
-              '&:hover': { bgcolor: '#d99c1e' }
-            }}
-          >
-            I Understand, Proceed
-          </Button>
+          <Button onClick={handleEstimationExcelWarningCancel} variant="outlined" sx={{ borderColor: '#e2e8f0', color: '#64748b', fontWeight: 700 }}>Cancel</Button>
+          <Button onClick={handleEstimationExcelWarningConfirm} variant="contained" sx={{ bgcolor: '#f1b31c', color: '#0f172a', fontWeight: 700 }}>I Understand, Proceed</Button>
         </DialogActions>
       </Dialog>
 
-      {/* Warning Dialog for Send with Estimation Excel */}
-      <Dialog
-        open={sendWarningOpen}
-        onClose={handleSendWarningCancel}
-        maxWidth="sm"
-        fullWidth
-      >
-        <DialogTitle sx={{ fontWeight: 900, color: '#f1b31c', backgroundColor: 'rgba(241, 179, 28, 0.1)' }}>
-          ⚠️ Confirm Sending Estimation Excel
-        </DialogTitle>
+      <Dialog open={sendWarningOpen} onClose={handleSendWarningCancel} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ fontWeight: 900, color: '#f1b31c', backgroundColor: 'rgba(241, 179, 28, 0.1)' }}>Confirm Sending Estimation Excel</DialogTitle>
         <DialogContent sx={{ pt: 3 }}>
           <DialogContentText sx={{ color: '#0f172a', fontWeight: 500, mb: 2 }}>
             Your selection includes the <strong>"Estimation Excel"</strong> document(s).
           </DialogContentText>
-          <DialogContentText sx={{ color: '#475569', mb: 2 }}>
-            This is a sensitive document containing confidential financial information. Are you sure you want to send it?
-          </DialogContentText>
-          <Alert severity="warning" sx={{ borderRadius: 0 }}>
-            <Typography variant="body2" fontWeight="600">
-              Once sent, this information will be transmitted. Please verify all recipients have proper access rights.
-            </Typography>
-          </Alert>
+          <DialogContentText sx={{ color: '#475569', mb: 2 }}>This is a sensitive document containing confidential financial information. Are you sure you want to send it?</DialogContentText>
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
-          <Button
-            onClick={handleSendWarningCancel}
-            variant="outlined"
-            sx={{
-              borderColor: '#e2e8f0',
-              color: '#64748b',
-              borderRadius: 0,
-              fontWeight: 700,
-              '&:hover': { bgcolor: '#f8fafc' }
-            }}
-          >
-            Cancel
+          <Button onClick={handleSendWarningCancel} variant="outlined" sx={{ borderColor: '#e2e8f0', color: '#64748b', fontWeight: 700 }}>Cancel</Button>
+          <Button onClick={handleSendWarningConfirm} variant="contained" sx={{ bgcolor: '#f1b31c', color: '#0f172a', fontWeight: 700 }}>Yes, Send</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={rejectDialogOpen} onClose={handleRejectCancel} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ fontWeight: 900, color: '#dc2626', backgroundColor: 'rgba(220, 38, 38, 0.1)' }}>Confirm Rejection</DialogTitle>
+        <DialogContent sx={{ pt: 3 }}>
+          <DialogContentText sx={{ color: '#0f172a', fontWeight: 500, mb: 2 }}>
+            Please provide a detailed rejection reason. The applicant will see this reason and can edit and resubmit the request.
+          </DialogContentText>
+          <TextField autoFocus fullWidth multiline rows={4} placeholder="Enter rejection reason..." value={rejectReason}
+            onChange={(e) => setRejectReason(e.target.value)}
+            sx={{ '& .MuiOutlinedInput-root': { borderRadius: 0, bgcolor: '#f8fafc' } }} />
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={handleRejectCancel} variant="outlined" sx={{ borderColor: '#e2e8f0', color: '#64748b', fontWeight: 700 }}>Cancel</Button>
+          <Button onClick={handleRejectConfirm} disabled={!rejectReason.trim() || rejecting} variant="contained"
+            sx={{ bgcolor: '#dc2626', color: 'white', fontWeight: 700, '&:hover': { bgcolor: '#b91c1c' } }}>
+            {rejecting ? 'Rejecting...' : 'Confirm Rejection'}
           </Button>
-          <Button
-            onClick={handleSendWarningConfirm}
-            variant="contained"
-            sx={{
-              bgcolor: '#f1b31c',
-              color: '#0f172a',
-              borderRadius: 0,
-              fontWeight: 700,
-              '&:hover': { bgcolor: '#d99c1e' }
-            }}
-          >
-            Yes, Send
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={resendOpen} onClose={closeResendDialog} maxWidth="md" fullWidth PaperProps={{ sx: { borderRadius: '12px' } }}>
+        <DialogTitle sx={{ fontWeight: 900, color: '#064e3b', borderBottom: '1px solid #e2e8f0', py: 2 }}>
+          Edit & Resend Request #{id}
+        </DialogTitle>
+        <DialogContent sx={{ pt: 3 }}>
+          <Alert severity="info" sx={{ mb: 3, borderRadius: '8px' }}>
+            The original rejection reason is preserved in the audit trail and will remain visible. After you save, the request returns to the Checker step.
+          </Alert>
+          <Grid container spacing={2}>
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <TextField fullWidth label="Applicant Name *" value={resendForm.applicantName}
+                onChange={(e) => handleResendFormChange('applicantName', e.target.value)}
+                sx={{ '& .MuiOutlinedInput-root': { borderRadius: '8px' } }} />
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <TextField fullWidth label="Owner Name *" value={resendForm.ownerName}
+                onChange={(e) => handleResendFormChange('ownerName', e.target.value)}
+                sx={{ '& .MuiOutlinedInput-root': { borderRadius: '8px' } }} />
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <TextField fullWidth label="LHU Number *" value={resendForm.lhuNo}
+                onChange={(e) => handleResendFormChange('lhuNo', e.target.value)}
+                sx={{ '& .MuiOutlinedInput-root': { borderRadius: '8px' } }} />
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <TextField fullWidth label="Plot Area" type="number" value={resendForm.plotArea}
+                onChange={(e) => handleResendFormChange('plotArea', e.target.value)}
+                sx={{ '& .MuiOutlinedInput-root': { borderRadius: '8px' } }} />
+            </Grid>
+            <Grid size={{ xs: 12, sm: 4 }}>
+              <TextField fullWidth label="City" value={resendForm.city}
+                onChange={(e) => handleResendFormChange('city', e.target.value)}
+                sx={{ '& .MuiOutlinedInput-root': { borderRadius: '8px' } }} />
+            </Grid>
+            <Grid size={{ xs: 12, sm: 4 }}>
+              <TextField fullWidth label="Sub-City" value={resendForm.subCity}
+                onChange={(e) => handleResendFormChange('subCity', e.target.value)}
+                sx={{ '& .MuiOutlinedInput-root': { borderRadius: '8px' } }} />
+            </Grid>
+            <Grid size={{ xs: 12, sm: 4 }}>
+              <TextField fullWidth label="Kebele" value={resendForm.kebele}
+                onChange={(e) => handleResendFormChange('kebele', e.target.value)}
+                sx={{ '& .MuiOutlinedInput-root': { borderRadius: '8px' } }} />
+            </Grid>
+            <Grid size={{ xs: 12, sm: 4 }}>
+              <FormControl fullWidth>
+                <InputLabel>Building Type</InputLabel>
+                <Select value={resendForm.buildingType} label="Building Type" onChange={handleResendSelectChange('buildingType')} sx={{ borderRadius: '8px' }}>
+                  {BUILDING_TYPE_OPTIONS.map(opt => (<MenuItem key={opt} value={opt}>{opt}</MenuItem>))}
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid size={{ xs: 12, sm: 4 }}>
+              <FormControl fullWidth>
+                <InputLabel>Purpose</InputLabel>
+                <Select value={resendForm.purpose} label="Purpose" onChange={handleResendSelectChange('purpose')} sx={{ borderRadius: '8px' }}>
+                  {PURPOSE_OPTIONS.map(opt => (<MenuItem key={opt} value={opt}>{opt}</MenuItem>))}
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid size={{ xs: 12, sm: 4 }}>
+              <FormControl fullWidth>
+                <InputLabel>Type</InputLabel>
+                <Select value={resendForm.type} label="Type" onChange={handleResendSelectChange('type')} sx={{ borderRadius: '8px' }}>
+                  {TYPE_OPTIONS.map(opt => (<MenuItem key={opt} value={opt}>{opt}</MenuItem>))}
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid size={12}>
+              <TextField fullWidth label="Maker Remark (optional)" multiline rows={3}
+                placeholder="Briefly note what was changed or why this resubmission is ready for review..."
+                value={resendForm.makerRemark} onChange={(e) => handleResendFormChange('makerRemark', e.target.value)}
+                sx={{ '& .MuiOutlinedInput-root': { borderRadius: '8px' } }} />
+            </Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions sx={{ p: 2, bgcolor: '#f8fafc', borderTop: '1px solid #e2e8f0' }}>
+          <Button onClick={closeResendDialog} disabled={resending} variant="outlined" sx={{ borderColor: '#e2e8f0', color: '#64748b', fontWeight: 700 }}>Cancel</Button>
+          <Button onClick={handleResendConfirm} disabled={resending} variant="contained"
+            startIcon={resending ? <CircularProgress size={18} color="inherit" /> : <Save size={18} />}
+            sx={{ bgcolor: '#0891b2', color: 'white', fontWeight: 800, '&:hover': { bgcolor: '#0e7490' } }}>
+            {resending ? 'Saving...' : 'Save & Resend for Review'}
           </Button>
         </DialogActions>
       </Dialog>

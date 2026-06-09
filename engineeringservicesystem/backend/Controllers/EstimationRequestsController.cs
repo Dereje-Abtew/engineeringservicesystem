@@ -92,7 +92,7 @@ namespace backend.Controllers
 
         // POST: api/EstimationRequests/5/report
         [Authorize(Policy = Permissions.RequestsEstimate)]
-        [HttpPost("{id}/report")] 
+        [HttpPost("{id}/report")]
         [ProducesResponseType(StatusCodes.Status204NoContent)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -193,7 +193,7 @@ namespace backend.Controllers
             if (!ModelState.IsValid) return BadRequest(ModelState);
 
             var result = await _requestsService.ManagerRejectAsync(id, dto);
-            if (!result) return NotFound(new { message = "Request rejected successfully by Manager" });
+            if (!result) return NotFound(new { message = "Estimation request not found" });
 
             return Ok(new { message = "Request rejected successfully by Manager" });
         }
@@ -268,8 +268,103 @@ namespace backend.Controllers
             return NoContent();
         }
 
+        // =================================================================
+        // UPDATE (Maker editing a pending request)
+        // The maker can edit their request while it is still pending (before
+        // the Checker acts). This updates editable fields without changing
+        // the workflow status.
+        // =================================================================
+        [Authorize(Policy = Permissions.RequestsEdit)]
+        [HttpPut("{id}")]
+        [ProducesResponseType(StatusCodes.Status200OK, Type = typeof(EstimationRequestResponseDto))]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<EstimationRequestResponseDto>> Update(int id, [FromBody] UpdateEstimationRequestDto dto)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
 
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId))
+            {
+                return Unauthorized();
+            }
 
+            if (dto == null)
+            {
+                return BadRequest(new { message = "Update payload is required" });
+            }
+
+            dto.Id = id;
+            var (succeeded, errorMessage) = await _requestsService.UpdateRequestAsync(id, dto, userId);
+            if (!succeeded)
+            {
+                if (string.Equals(errorMessage, "Estimation request not found", System.StringComparison.OrdinalIgnoreCase))
+                {
+                    return NotFound(new { message = errorMessage });
+                }
+                return BadRequest(new { message = errorMessage });
+            }
+
+            // Return the updated entity so the client can refresh its state
+            var userPermissions = User.FindAll("Permission")
+                .Concat(User.FindAll("http://schemas.microsoft.com/ws/2008/06/identity/claims/permission"))
+                .Select(c => c.Value)
+                .ToList();
+            var isAdminOrSystemAdmin = User.IsInRole("Admin") || User.IsInRole("SystemAdmin");
+
+            var updated = await _requestsService.GetRequestByIdAsync(id, userId, userPermissions, isAdminOrSystemAdmin);
+            return Ok(updated);
+        }
+
+        // =================================================================
+        // RESEND (Edit & Resubmit) ENDPOINT
+        // The maker edits a rejected request and re-submits it. The
+        // status is reset to Pending (0) so the workflow restarts at
+        // the Checker step. The rejection reason/date remain in the
+        // audit trail (LastRejection* fields) so the workflow is
+        // preserved and visible across the resend.
+        // =================================================================
+        [Authorize(Policy = Permissions.RequestsCreate)]
+        [HttpPost("{id}/resend")]
+        [ProducesResponseType(StatusCodes.Status200OK, Type = typeof(EstimationRequestResponseDto))]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<EstimationRequestResponseDto>> Resend(int id, [FromBody] UpdateEstimationRequestDto dto)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId))
+            {
+                return Unauthorized();
+            }
+
+            if (dto == null)
+            {
+                return BadRequest(new { message = "Update payload is required" });
+            }
+
+            dto.Id = id;
+            var (succeeded, errorMessage) = await _requestsService.ResendRequestAsync(id, dto, userId);
+            if (!succeeded)
+            {
+                if (string.Equals(errorMessage, "Estimation request not found", System.StringComparison.OrdinalIgnoreCase))
+                {
+                    return NotFound(new { message = errorMessage });
+                }
+                return BadRequest(new { message = errorMessage });
+            }
+
+            // Return the updated entity so the client can refresh its state
+            var userPermissions = User.FindAll("Permission")
+                .Concat(User.FindAll("http://schemas.microsoft.com/ws/2008/06/identity/claims/permission"))
+                .Select(c => c.Value)
+                .ToList();
+            var isAdminOrSystemAdmin = User.IsInRole("Admin") || User.IsInRole("SystemAdmin");
+
+            var updated = await _requestsService.GetRequestByIdAsync(id, userId, userPermissions, isAdminOrSystemAdmin);
+            return Ok(updated);
+        }
     }
 }
 

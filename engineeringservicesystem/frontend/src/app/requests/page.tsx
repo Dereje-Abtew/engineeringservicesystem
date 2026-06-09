@@ -504,6 +504,14 @@ const ViewDetailsDialog = ({ open, onClose, request }: { open: boolean; onClose:
           <Grid item xs={12} md={6}><Typography variant="body2" sx={{ color: '#64748b' }}>Owner Name</Typography><Typography variant="body1" fontWeight="600">{request.ownerName}</Typography></Grid>
           <Grid item xs={12} md={6}><Typography variant="body2" sx={{ color: '#64748b' }}>LHU Number</Typography><Typography variant="body1" fontWeight="600" fontFamily="monospace">{request.lhuNo}</Typography></Grid>
           <Grid item xs={12} md={6}><Typography variant="body2" sx={{ color: '#64748b' }}>Status</Typography><Chip label={statusMap[request.status]?.label} size="small" sx={{ bgcolor: statusMap[request.status]?.bg, color: statusMap[request.status]?.color, fontWeight: 600 }} /></Grid>
+          {request.lastRejectionReason && (
+            <Grid item xs={12}>
+              <Typography variant="body2" sx={{ color: '#64748b' }}>Last Rejection</Typography>
+              <Typography variant="body1" fontWeight="600" sx={{ color: '#dc2626' }}>
+                {request.lastRejectionReason} {request.lastRejectionBy ? `— by ${request.lastRejectionBy}` : ''} {request.lastRejectionDate ? `(${new Date(request.lastRejectionDate).toLocaleDateString()})` : ''}
+              </Typography>
+            </Grid>
+          )}
           <Grid item xs={12} md={6}><Typography variant="body2" sx={{ color: '#64748b' }}>Created At</Typography><Typography variant="body1" fontWeight="600">{new Date(request.createdAt).toLocaleDateString()}</Typography></Grid>
           <Grid item xs={12} md={6}><Typography variant="body2" sx={{ color: '#64748b' }}>Assigned Engineer</Typography><Typography variant="body1" fontWeight="600">{request.assignedEngineerName || 'Not Assigned'}</Typography></Grid>
           
@@ -1403,6 +1411,7 @@ export default function RequestsPage() {
   const [existingReportData, setExistingReportData] = useState<EstimationRequest['report'] | null>(null);
   const [openDialog, setOpenDialog] = useState(false);
   const [openConfirm, setOpenConfirm] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -1807,7 +1816,117 @@ export default function RequestsPage() {
   const handleMenuOpen = (e: React.MouseEvent<HTMLElement>, row: EstimationRequest) => { setAnchorEl(e.currentTarget); setSelectedRow(row); };
   const handleMenuClose = () => { setAnchorEl(null); };
   const handleOpenForm = () => { setOpenDialog(true); setSubmitError(null); setLhuError(null); };
-  let handleCloseForm = () => { setOpenDialog(false); setAttachments([]); setSubmitError(null); };
+
+  // Resend/Edit mode - when maker edits a rejected request and resubmits
+  const [isResendMode, setIsResendMode] = useState(false);
+  const [resendRequestId, setResendRequestId] = useState<number | null>(null);
+  // Edit-before-checker mode
+  const [isRequestEditMode, setIsRequestEditMode] = useState(false);
+  const [editRequestId, setEditRequestId] = useState<number | null>(null);
+
+  const openResendForm = async (row: EstimationRequest) => {
+    try {
+      setSelectedRow(row);
+      setOpenDialog(true);
+      setSubmitError(null);
+      setLhuError(null);
+      setIsRequestEditMode(false);
+      setIsResendMode(true);
+      setResendRequestId(row.id);
+      // fetch full request details to prefill (attachments, lat/long etc.)
+      const full = await api.get<EstimationRequest>(`/EstimationRequests/${row.id}`);
+      formik.setValues({
+        applicantName: full.applicantName || '',
+        ownerName: full.ownerName || '',
+        lhuNo: full.lhuNo || '',
+        region: '',
+        cityId: '',
+        subCityId: '',
+        kebeleName: '',
+        city: full.city || '',
+        subCity: full.subCity || '',
+        kebele: full.kebele || '',
+        plotArea: (full.plotArea ?? 0).toString(),
+        buildingType: full.buildingType || 'Condominium',
+        purpose: full.purpose || 'Mortgage',
+        projectFinanceDocType: full.projectFinanceDocType || '',
+        billOfPenalty: full.billOfPenalty ?? false,
+        type: full.type || 'NewEstimation'
+      });
+      setAttachments(full.attachments || []);
+    } catch (err) {
+      // fallback to shallow values
+      setIsRequestEditMode(false);
+      setIsResendMode(true);
+      setResendRequestId(row.id);
+      formik.setValues({
+        applicantName: row.applicantName || '',
+        ownerName: row.ownerName || '',
+        lhuNo: row.lhuNo || '',
+        region: '', cityId: '', subCityId: '', kebeleName: '',
+        city: row.city || '', subCity: row.subCity || '', kebele: row.kebele || '',
+        plotArea: (row.plotArea ?? 0).toString(),
+        buildingType: row.buildingType || 'Condominium',
+        purpose: row.purpose || 'Mortgage',
+        projectFinanceDocType: row.projectFinanceDocType || '',
+        billOfPenalty: row.billOfPenalty ?? false,
+        type: row.type || 'NewEstimation'
+      });
+      setAttachments(row.attachments || []);
+    }
+  };
+
+  const openEditForm = async (row: EstimationRequest) => {
+    try {
+      setSelectedRow(row);
+      setOpenDialog(true);
+      setSubmitError(null);
+      setLhuError(null);
+      setIsResendMode(false);
+      setIsRequestEditMode(true);
+      setEditRequestId(row.id);
+      const full = await api.get<EstimationRequest>(`/EstimationRequests/${row.id}`);
+      formik.setValues({
+        applicantName: full.applicantName || '',
+        ownerName: full.ownerName || '',
+        lhuNo: full.lhuNo || '',
+        region: '',
+        cityId: '',
+        subCityId: '',
+        kebeleName: '',
+        city: full.city || '',
+        subCity: full.subCity || '',
+        kebele: full.kebele || '',
+        plotArea: (full.plotArea ?? 0).toString(),
+        buildingType: full.buildingType || 'Condominium',
+        purpose: full.purpose || 'Mortgage',
+        projectFinanceDocType: full.projectFinanceDocType || '',
+        billOfPenalty: full.billOfPenalty ?? false,
+        type: full.type || 'NewEstimation'
+      });
+      setAttachments(full.attachments || []);
+    } catch (err) {
+      // fallback to shallow values
+      setIsRequestEditMode(true);
+      setEditRequestId(row.id);
+      formik.setValues({
+        applicantName: row.applicantName || '',
+        ownerName: row.ownerName || '',
+        lhuNo: row.lhuNo || '',
+        region: '', cityId: '', subCityId: '', kebeleName: '',
+        city: row.city || '', subCity: row.subCity || '', kebele: row.kebele || '',
+        plotArea: (row.plotArea ?? 0).toString(),
+        buildingType: row.buildingType || 'Condominium',
+        purpose: row.purpose || 'Mortgage',
+        projectFinanceDocType: row.projectFinanceDocType || '',
+        billOfPenalty: row.billOfPenalty ?? false,
+        type: row.type || 'NewEstimation'
+      });
+      setAttachments(row.attachments || []);
+    }
+  };
+
+  let handleCloseForm = () => { setOpenDialog(false); setAttachments([]); setSubmitError(null); setIsResendMode(false); setResendRequestId(null); setIsRequestEditMode(false); setEditRequestId(null); };
   const handleConfirmAssignment = async () => {
     if (!selectedOfficerId || !selectedRow) return;
     await batchAssign(selectedOfficerId, [selectedRow.id]);
@@ -1860,34 +1979,93 @@ export default function RequestsPage() {
       return;
     }
     
-    const isUnique = await checkLHU(formik.values.lhuNo);
+    const isUnique = await checkLHU(formik.values.lhuNo, isResendMode ? resendRequestId ?? undefined : undefined);
     if (!isUnique) {
       setSubmitError('LHU number already exists. Please enter a unique LHU number.');
       return;
     }
     
     try {
-      await api.post('/EstimationRequests', {
-        applicantName: formik.values.applicantName.trim(),
-        ownerName: formik.values.ownerName.trim(),
-        lhuNo: formik.values.lhuNo.trim(),
-        city: formik.values.city,
-        subCity: formik.values.subCity,
-        kebele: formik.values.kebele,
-        plotArea: Number(formik.values.plotArea),
-        buildingType: formik.values.buildingType,
-        purpose: formik.values.purpose,
-        projectFinanceDocType: formik.values.projectFinanceDocType,
-        billOfPenalty: formik.values.billOfPenalty,
-        type: formik.values.type,
-        attachments: attachments.map(a => ({ fileName: a.fileName, filePath: a.fileUrl, documentType: a.documentType })),
-        branchUserId: user?.id,
-        branchId: user?.branchId
-      });
-      formik.resetForm();
-      setAttachments([]);
-      await fetchData();
-      handleCloseForm();
+      if (isRequestEditMode && editRequestId) {
+        setSubmitting(true);
+        // Update existing request (edit before checker acts)
+        await api.put(`/EstimationRequests/${editRequestId}`, {
+          applicantName: formik.values.applicantName.trim(),
+          ownerName: formik.values.ownerName.trim(),
+          lhuNo: formik.values.lhuNo.trim(),
+          city: formik.values.city,
+          subCity: formik.values.subCity,
+          kebele: formik.values.kebele,
+          plotArea: Number(formik.values.plotArea),
+          buildingType: formik.values.buildingType,
+          purpose: formik.values.purpose,
+          projectFinanceDocType: formik.values.projectFinanceDocType,
+          billOfPenalty: formik.values.billOfPenalty,
+          type: formik.values.type,
+          attachments: attachments.map(a => ({ fileName: a.fileName, filePath: a.fileUrl, documentType: a.documentType }))
+        });
+
+        formik.resetForm();
+        setAttachments([]);
+        setIsRequestEditMode(false);
+        setEditRequestId(null);
+        setSubmitError(null);
+        await fetchData();
+        handleCloseForm();
+        notify('Request updated successfully', 'success');
+      } else if (isResendMode && resendRequestId) {
+        setSubmitting(true);
+        const payload: any = {
+          id: resendRequestId,
+          applicantName: formik.values.applicantName.trim(),
+          ownerName: formik.values.ownerName.trim(),
+          lhuNo: formik.values.lhuNo.trim(),
+          city: formik.values.city,
+          subCity: formik.values.subCity,
+          kebele: formik.values.kebele,
+          latitude: 0,
+          longitude: 0,
+          plotArea: Number(formik.values.plotArea),
+          buildingType: formik.values.buildingType,
+          purpose: formik.values.purpose,
+          type: formik.values.type,
+          projectFinanceDocType: formik.values.projectFinanceDocType,
+          billOfPenalty: formik.values.billOfPenalty,
+          makerRemark: ''
+        };
+
+        await api.post(`/EstimationRequests/${resendRequestId}/resend`, payload);
+        formik.resetForm();
+        setAttachments([]);
+        setIsResendMode(false);
+        setResendRequestId(null);
+        setSubmitError(null);
+        await fetchData();
+        handleCloseForm();
+        notify('Request resent successfully and workflow restarted', 'success');
+      } else {
+        await api.post('/EstimationRequests', {
+          applicantName: formik.values.applicantName.trim(),
+          ownerName: formik.values.ownerName.trim(),
+          lhuNo: formik.values.lhuNo.trim(),
+          city: formik.values.city,
+          subCity: formik.values.subCity,
+          kebele: formik.values.kebele,
+          plotArea: Number(formik.values.plotArea),
+          buildingType: formik.values.buildingType,
+          purpose: formik.values.purpose,
+          projectFinanceDocType: formik.values.projectFinanceDocType,
+          billOfPenalty: formik.values.billOfPenalty,
+          type: formik.values.type,
+          attachments: attachments.map(a => ({ fileName: a.fileName, filePath: a.fileUrl, documentType: a.documentType })),
+          branchUserId: user?.id,
+          branchId: user?.branchId
+        });
+        formik.resetForm();
+        setAttachments([]);
+        await fetchData();
+        handleCloseForm();
+      }
     } catch (error: unknown) {
       const errorData = getErrorData(error);
       console.error('Submit error:', errorData);
@@ -1896,6 +2074,8 @@ export default function RequestsPage() {
       } else {
         setSubmitError(errorData?.message || 'Submission failed');
       }
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -1935,7 +2115,7 @@ export default function RequestsPage() {
     },
   });
 
-  handleCloseForm = () => { setOpenDialog(false); formik.resetForm(); setAttachments([]); setSubmitError(null); };
+  handleCloseForm = () => { setOpenDialog(false); formik.resetForm(); setAttachments([]); setSubmitError(null); setIsResendMode(false); setResendRequestId(null); setIsRequestEditMode(false); setEditRequestId(null); };
 
   const getMissingDocumentTypes = () => {
     const required = [...requiredDocumentTypes];
@@ -2001,7 +2181,15 @@ export default function RequestsPage() {
     if (!selectedRow) return [];
     const items = [];
     items.push(<MenuItem key="view" onClick={() => handleView(selectedRow)}><ListItemIcon><Eye size={18} /></ListItemIcon><ListItemText primary="View Details" /></MenuItem>);
-    if (canEditRequest(selectedRow.status)) items.push(<MenuItem key="edit" onClick={() => router.push(`/requests/${selectedRow.id}/edit`)}><ListItemIcon><Edit size={18} /></ListItemIcon><ListItemText primary="Edit Request" /></MenuItem>);
+
+    // If the request is rejected and the current user is the original maker, offer Resend (Edit)
+    if (selectedRow.status === 5 && selectedRow.branchUserId && user?.id && selectedRow.branchUserId === user.id) {
+      items.push(<MenuItem key="resend" onClick={() => { openResendForm(selectedRow); handleMenuClose(); }}><ListItemIcon><Edit size={18} /></ListItemIcon><ListItemText primary="Resend (Edit)" /></MenuItem>);
+    }
+
+    // Allow the original maker to edit their pending request before a Checker acts
+    const isOwner = selectedRow.branchUserId && user?.id && selectedRow.branchUserId === user.id;
+    if ((isOwner && selectedRow.status === 0) || canEditRequest(selectedRow.status)) items.push(<MenuItem key="edit" onClick={() => { openEditForm(selectedRow); handleMenuClose(); }}><ListItemIcon><Edit size={18} /></ListItemIcon><ListItemText primary="Edit Request" /></MenuItem>);
     if (canApproveRequest(selectedRow.status)) items.push(<MenuItem key="approve" onClick={() => setWorkflowAction('checker_approve')}><ListItemIcon><CheckCircle size={18} color="#059669" /></ListItemIcon><ListItemText primary="Approve Request" /></MenuItem>);
     if (canRejectRequest(selectedRow.status)) items.push(<MenuItem key="reject" onClick={() => setWorkflowAction('checker_reject')}><ListItemIcon><XCircle size={18} color="#dc2626" /></ListItemIcon><ListItemText primary="Reject Request" /></MenuItem>);
     if (canManagerApprove(selectedRow.status)) items.push(<MenuItem key="mgr-approve" onClick={() => setWorkflowAction('manager_approve')}><ListItemIcon><CheckCircle size={18} color="#059669" /></ListItemIcon><ListItemText primary="Manager Approve" /></MenuItem>);

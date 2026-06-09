@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import { Box, Chip, IconButton, Paper, Typography } from '@mui/material';
+import { Box, Chip, IconButton, Paper, Typography, Tooltip } from '@mui/material';
 import { MaterialReactTable, type MRT_ColumnDef } from 'material-react-table';
 import { MoreVertical, MapPin } from 'lucide-react';
 import { useAuthStore } from '@/store/store';
@@ -33,6 +33,14 @@ export interface EstimationRequest {
     createdAt: string;
     assignedEngineerName?: string;
   };
+  // Rejection audit fields (populated by backend)
+  checkerRejectionReason?: string;
+  managerRejectionReason?: string;
+  lastRejectionReason?: string;
+  lastRejectionBy?: string;
+  lastRejectionDate?: string;
+  resentAt?: string;
+  resendCount?: number;
 }
 
 interface RequestsTableProps {
@@ -94,7 +102,7 @@ export default function RequestsTable({
     });
   }, [data, hasPermission, currentUserId, currentBranchId]);
 
-  const getStatusChip = (status: number) => {
+  const getStatusChip = (status: number, lastReason?: string, lastBy?: string, lastDate?: string) => {
     const config: Record<number, { label: string; color: string; bg: string; icon: string }> = {
       0: { label: 'Pending Checker', color: '#d97706', bg: '#fef3c7', icon: '⏳' },
       1: { label: 'Checker Approved', color: '#2563eb', bg: '#eff6ff', icon: '✓' },
@@ -104,7 +112,7 @@ export default function RequestsTable({
       5: { label: 'Rejected', color: '#dc2626', bg: '#fef2f2', icon: '✗' },
     };
     const c = config[status] || config[0];
-    return (
+    const chip = (
       <Chip
         label={`${c.icon} ${c.label}`}
         size="small"
@@ -119,6 +127,13 @@ export default function RequestsTable({
         }}
       />
     );
+
+    if (status === 5 && lastReason) {
+      const title = `${lastReason}${lastBy ? ` — by ${lastBy}` : ''}${lastDate ? ` (${new Date(lastDate).toLocaleDateString()})` : ''}`;
+      return <Tooltip title={title}>{chip}</Tooltip>;
+    }
+
+    return chip;
   };
 
   const columns = useMemo<MRT_ColumnDef<EstimationRequest>[]>(
@@ -182,7 +197,7 @@ export default function RequestsTable({
         accessorKey: 'status',
         header: 'Status',
         size: 160,
-        Cell: ({ cell }) => getStatusChip(cell.getValue<number>())
+        Cell: ({ cell, row }) => getStatusChip(cell.getValue<number>(), row.original.lastRejectionReason, row.original.lastRejectionBy, row.original.lastRejectionDate)
       },
     ],
     []

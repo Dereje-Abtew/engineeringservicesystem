@@ -37,5 +37,12 @@ namespace backend.Services
 
         // Engineering officer unassignment method (NEW)
         Task<bool> UnassignEngineeringOfficerAsync(int id);
+
+        // Resend a rejected request: update fields, set status back to Pending (0),
+        // but keep the rejection reason/date fields in the audit trail.
+        Task<(bool Succeeded, string? ErrorMessage)> ResendRequestAsync(int id, UpdateEstimationRequestDto dto, string userId);
+
+        // Update an editable request (maker editing before Checker action)
+        Task<(bool Succeeded, string? ErrorMessage)> UpdateRequestAsync(int id, UpdateEstimationRequestDto dto, string userId);
     }
 }
