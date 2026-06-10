@@ -157,6 +157,17 @@ namespace backend.Services
                 await _context.SaveChangesAsync();
             }
 
+            // Notify Checkers that a new request has been submitted. Target role: Checker
+            try
+            {
+                backend.Services.NotificationCenter.Create(
+                    "New Estimation Request",
+                    $"Request #{request.Id} submitted and awaiting Checker review.",
+                    new[] { "Checker" },
+                    Array.Empty<string>());
+            }
+            catch { /* Swallow notification errors to not break request creation */ }
+
             return await GetRequestByIdAsync(request.Id, userId, new List<string>(), false) ?? MapToResponseDto(request);
         }
 
@@ -172,6 +183,18 @@ namespace backend.Services
             request.CheckerActionDescription = dto.CheckerDescription;
 
             await _context.SaveChangesAsync();
+
+            // Notify Managers that Checker approved and request is ready for Manager
+            try
+            {
+                backend.Services.NotificationCenter.Create(
+                    "Request Approved by Checker",
+                    $"Request #{request.Id} was approved by Checker and is awaiting Manager action.",
+                    new[] { "Manager" },
+                    Array.Empty<string>());
+            }
+            catch { }
+
             return true;
         }
 
@@ -192,6 +215,20 @@ namespace backend.Services
             request.LastRejectionBy = "Checker";
 
             await _context.SaveChangesAsync();
+
+            // Notify the maker about rejection with reason
+            try
+            {
+                var makerId = request.BranchUserId;
+                var msg = $"Your request #{request.Id} was rejected by Checker. Reason: {dto.CheckerReason}";
+                backend.Services.NotificationCenter.Create(
+                    "Request Rejected by Checker",
+                    msg,
+                    new[] { "Maker" },
+                    string.IsNullOrEmpty(makerId) ? Array.Empty<string>() : new[] { makerId });
+            }
+            catch { }
+
             return true;
         }
 
@@ -207,6 +244,18 @@ namespace backend.Services
             request.ManagerActionDescription = dto.ManagerDescription;
 
             await _context.SaveChangesAsync();
+
+            // Notify Engineers that Manager approved (target role: Engineer)
+            try
+            {
+                backend.Services.NotificationCenter.Create(
+                    "Request Approved by Manager",
+                    $"Request #{request.Id} was approved by Manager and is ready for engineering assignment.",
+                    new[] { "Engineer" },
+                    Array.Empty<string>());
+            }
+            catch { }
+
             return true;
         }
 
@@ -227,6 +276,20 @@ namespace backend.Services
             request.LastRejectionBy = "Manager";
 
             await _context.SaveChangesAsync();
+
+            // Notify the maker about manager rejection
+            try
+            {
+                var makerId = request.BranchUserId;
+                var msg = $"Your request #{request.Id} was rejected by Manager. Reason: {dto.ManagerReason}";
+                backend.Services.NotificationCenter.Create(
+                    "Request Rejected by Manager",
+                    msg,
+                    new[] { "Maker" },
+                    string.IsNullOrEmpty(makerId) ? Array.Empty<string>() : new[] { makerId });
+            }
+            catch { }
+
             return true;
         }
 
@@ -244,6 +307,19 @@ namespace backend.Services
             request.EngineerAssignmentDate = dto.AssignmentDate;
 
             await _context.SaveChangesAsync();
+
+            // Notify assigned Engineer specifically
+            try
+            {
+                var engineerId = dto.EngineerId;
+                backend.Services.NotificationCenter.Create(
+                    "Assigned to Engineer",
+                    $"You have been assigned to request #{request.Id}.",
+                    new[] { "Engineer" },
+                    string.IsNullOrEmpty(engineerId) ? Array.Empty<string>() : new[] { engineerId });
+            }
+            catch { }
+
             return true;
         }
 
@@ -261,6 +337,18 @@ namespace backend.Services
             request.EngineerAssignmentDate = DateTime.UtcNow;
 
             await _context.SaveChangesAsync();
+
+            // Notify assigned engineering officer specifically
+            try
+            {
+                backend.Services.NotificationCenter.Create(
+                    "Assigned to Engineer",
+                    $"You have been assigned to request #{request.Id}.",
+                    new[] { "Engineer" },
+                    string.IsNullOrEmpty(officerId) ? Array.Empty<string>() : new[] { officerId });
+            }
+            catch { }
+
             return true;
         }
 
@@ -454,6 +542,18 @@ namespace backend.Services
             request.ResendCount += 1;
 
             await _context.SaveChangesAsync();
+
+            // Notify Checkers that the request has been resent
+            try
+            {
+                backend.Services.NotificationCenter.Create(
+                    "Request Resent",
+                    $"Request #{request.Id} has been resent and is awaiting Checker review.",
+                    new[] { "Checker" },
+                    Array.Empty<string>());
+            }
+            catch { }
+
             return (true, null);
         }
 
@@ -508,6 +608,18 @@ namespace backend.Services
             request.BillOfPenalty = dto.BillOfPenalty;
 
             await _context.SaveChangesAsync();
+
+            // Notify Checkers that the maker updated a pending request
+            try
+            {
+                backend.Services.NotificationCenter.Create(
+                    "Request Updated",
+                    $"Request #{request.Id} was updated by the maker and is awaiting Checker review.",
+                    new[] { "Checker" },
+                    Array.Empty<string>());
+            }
+            catch { }
+
             return (true, null);
         }
 

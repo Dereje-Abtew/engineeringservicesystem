@@ -26,6 +26,7 @@ import {
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/store';
 import { Settings as SettingsIcon } from 'lucide-react';
+import { useNotifications } from '@/hooks/useNotifications';
 
 interface HeaderProps {
   isCollapsed: boolean;
@@ -38,12 +39,23 @@ export default function Header({ isCollapsed, setIsCollapsed, currentWidth }: He
   const { user, logout } = useAuthStore();
   const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
 
+  const { items: notifications, unreadCount, markAsRead } = useNotifications();
+  const [notifAnchor, setNotifAnchor] = React.useState<null | HTMLElement>(null);
+
   const handleProfileMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
     setAnchorEl(event.currentTarget);
   };
 
   const handleProfileMenuClose = () => {
     setAnchorEl(null);
+  };
+
+  const handleNotificationsOpen = (event: React.MouseEvent<HTMLElement>) => {
+    setNotifAnchor(event.currentTarget);
+  };
+
+  const handleNotificationsClose = () => {
+    setNotifAnchor(null);
   };
 
   const handleLogout = () => {
@@ -81,12 +93,29 @@ export default function Header({ isCollapsed, setIsCollapsed, currentWidth }: He
           </Box>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             <Tooltip title="Notifications">
-              <IconButton sx={{ color: '#064e3b', bgcolor: 'rgba(255,255,255,0.2)', borderRadius: 0 }}>
-                <Badge variant="dot" color="error">
+              <IconButton aria-controls={notifAnchor ? 'notif-menu' : undefined} aria-haspopup="true" onClick={handleNotificationsOpen} sx={{ color: '#064e3b', bgcolor: 'rgba(255,255,255,0.2)', borderRadius: 0 }} id="notification-button">
+                <Badge badgeContent={unreadCount} color="error" overlap="circular">
                   <Bell size={20} />
                 </Badge>
               </IconButton>
             </Tooltip>
+
+            <Menu
+              id="notif-menu"
+              anchorEl={notifAnchor}
+              open={Boolean(notifAnchor)}
+              onClose={handleNotificationsClose}
+              PaperProps={{ sx: { mt: 1, minWidth: 320, borderRadius: 0, boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' } }}
+              transformOrigin={{ horizontal: 'right', vertical: 'top' }}
+              anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
+            >
+              {notifications.length === 0 && <MenuItem disabled sx={{ py: 2, px: 3 }}>No notifications</MenuItem>}
+              {notifications.map(n => (
+                <MenuItem key={n.id} onClick={async () => { try { await markAsRead(n.id); handleNotificationsClose(); } catch {} }} sx={{ whiteSpace: 'normal', alignItems: 'flex-start' }}>
+                  <ListItemText primary={<strong style={{ fontSize: '0.95rem' }}>{n.title}</strong>} secondary={<span style={{ fontSize: '0.8rem' }}>{n.message}</span>} />
+                </MenuItem>
+              ))}
+            </Menu>
 
             <Divider orientation="vertical" flexItem sx={{ my: 2, borderColor: 'rgba(6, 78, 59, 0.1)' }} />
 
