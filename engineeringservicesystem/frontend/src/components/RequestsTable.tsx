@@ -69,7 +69,7 @@ export default function RequestsTable({
     const canViewOwn = hasPermission('Permissions.Requests.ViewOwn');
     const canViewBranch = hasPermission('Permissions.Requests.ViewBranch');
     const canViewAll = hasPermission('Permissions.Requests.ViewAll');
-    const canViewAllAssigned = hasPermission('Permissions.Requests.ViewAllAssigned');
+    const canViewAllEstimated = hasPermission('Permissions.Requests.ViewAllEstimated');
     const canViewAssigned = hasPermission('Permissions.Requests.ViewAssigned');
 
     return data.filter((request) => {
@@ -83,14 +83,14 @@ export default function RequestsTable({
         return true;
       }
 
-      // Lead Engineer with ViewAllAssigned - see all assigned requests from any engineer
-      if (canViewAllAssigned && request.assignedEngineerId !== null) {
+      // User with ViewAllEstimated - see any estimated request (status 4) regardless of assignment
+      if (canViewAllEstimated && request.status === 4) {
         return true;
       }
 
-      // Engineering Officer with ViewAssigned - see only assigned requests
+      // Engineering Officer with ViewAssigned - see only own assigned requests (status 3)
       if (canViewAssigned && request.assignedEngineerId === currentUserId) {
-        return true;
+        return request.status === 3 || request.status === 4;
       }
 
       // Regular user with ViewOwn - see only their own requests

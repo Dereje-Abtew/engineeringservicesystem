@@ -138,6 +138,9 @@ interface EstimationRequest {
   };
   projectFinanceDocType?: string;
   billOfPenalty?: boolean;
+  lastRejectionReason?: string;
+  lastRejectionBy?: string;
+  lastRejectionDate?: string;
   attachments?: Attachment[];
   // Filtered estimation attachments (populated by the backend for users with
   // Requests.ViewEstimation or Requests.ViewFilteredEstimation permissions)

@@ -57,7 +57,7 @@ export default function EditRequestPage() {
     const load = async () => {
       try {
         setLoading(true);
-        const data = await api.get(`/EstimationRequests/${id}`);
+        const data = await api.get<{ applicantName?: string; ownerName?: string; lhuNo?: string; city?: string; subCity?: string; kebele?: string; plotArea?: number | string; buildingType?: string; purpose?: string; type?: string; projectFinanceDocType?: string; billOfPenalty?: boolean }>(`/EstimationRequests/${id}`);
         formik.setValues({
           applicantName: data.applicantName ?? '',
           ownerName: data.ownerName ?? '',
@@ -91,32 +91,32 @@ export default function EditRequestPage() {
 
         <form onSubmit={formik.handleSubmit}>
           <Grid container spacing={2}>
-            <Grid item xs={12} sm={6}>
+            <Grid size={{ xs: 12, sm: 6 }}>
               <TextField fullWidth label="Applicant" name="applicantName" value={formik.values.applicantName}
                 onChange={formik.handleChange} error={!!(formik.touched.applicantName && formik.errors.applicantName)} helperText={formik.touched.applicantName && formik.errors.applicantName} />
             </Grid>
-            <Grid item xs={12} sm={6}>
+            <Grid size={{ xs: 12, sm: 6 }}>
               <TextField fullWidth label="Owner" name="ownerName" value={formik.values.ownerName}
                 onChange={formik.handleChange} error={!!(formik.touched.ownerName && formik.errors.ownerName)} helperText={formik.touched.ownerName && formik.errors.ownerName} />
             </Grid>
-            <Grid item xs={12} sm={6}>
+            <Grid size={{ xs: 12, sm: 6 }}>
               <TextField fullWidth label="LHU No" name="lhuNo" value={formik.values.lhuNo}
                 onChange={formik.handleChange} error={!!(formik.touched.lhuNo && formik.errors.lhuNo)} helperText={formik.touched.lhuNo && formik.errors.lhuNo} />
             </Grid>
-            <Grid item xs={12} sm={6}>
+            <Grid size={{ xs: 12, sm: 6 }}>
               <TextField fullWidth label="Plot Area" name="plotArea" value={formik.values.plotArea}
                 onChange={formik.handleChange} />
             </Grid>
-            <Grid item xs={12} sm={4}>
+            <Grid size={{ xs: 12, sm: 4 }}>
               <TextField fullWidth label="City" name="city" value={formik.values.city} onChange={formik.handleChange} />
             </Grid>
-            <Grid item xs={12} sm={4}>
+            <Grid size={{ xs: 12, sm: 4 }}>
               <TextField fullWidth label="Sub City" name="subCity" value={formik.values.subCity} onChange={formik.handleChange} />
             </Grid>
-            <Grid item xs={12} sm={4}>
+            <Grid size={{ xs: 12, sm: 4 }}>
               <TextField fullWidth label="Kebele" name="kebele" value={formik.values.kebele} onChange={formik.handleChange} />
             </Grid>
-            <Grid item xs={12} sx={{ mt: 2 }}>
+            <Grid size={{ xs: 12 }} sx={{ mt: 2 }}>
               <Box sx={{ display: 'flex', gap: 2 }}>
                 <Button type="submit" variant="contained">Save changes</Button>
                 <Button variant="outlined" onClick={() => router.push(`/requests/${id}`)}>Cancel</Button>

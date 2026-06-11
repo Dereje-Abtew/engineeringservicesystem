@@ -39,6 +39,9 @@ export interface EstimationRequest {
   managerActionDate?: string;
   managerActionDescription?: string;
   managerRejectionReason?: string;
+  lastRejectionReason?: string;
+  lastRejectionBy?: string;
+  lastRejectionDate?: string;
 }
 
 export interface Engineer {
