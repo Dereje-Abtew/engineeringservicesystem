@@ -60,10 +60,11 @@ namespace backend.Services
                 // Show only user's own requests (Maker)
                 query = query.Where(e => e.BranchUserId == userId);
             }
-            else if (userPermissions.Contains(Permissions.RequestsViewAllAssigned))
+            else if (userPermissions.Contains(Permissions.RequestsViewAllEstimated))
             {
-                // Show ALL assigned requests to ANY engineer
-                query = query.Where(e => e.AssignedEngineerId != null);
+                // Can see own requests if status is Assigned, OR see all requests if status is Estimated
+                query = query.Where(e => e.Status == RequestStatus.Estimated ||
+                                         (e.AssignedEngineerId == userId && e.Status == RequestStatus.AssignedToEngineer));
             }
             else if (userPermissions.Contains(Permissions.RequestsViewAssigned))
             {
@@ -74,7 +75,10 @@ namespace backend.Services
             var entities = await query.OrderByDescending(e => e.CreatedAt).ToListAsync();
             return entities.Select(e =>
             {
-                var canViewReport = isAdminOrSystemAdmin || userPermissions.Contains(Permissions.RequestsViewEstimation) || e.AssignedEngineerId == userId;
+                var canViewReport = isAdminOrSystemAdmin || 
+                                    userPermissions.Contains(Permissions.RequestsViewEstimation) || 
+                                    e.AssignedEngineerId == userId ||
+                                    (userPermissions.Contains(Permissions.RequestsViewAllEstimated) && e.Status == RequestStatus.Estimated);
                 return MapToResponseDto(e, canViewReport, userPermissions, isAdminOrSystemAdmin);
             });
         }
@@ -90,7 +94,10 @@ namespace backend.Services
 
             if (request == null) return null;
 
-            var canViewReport = isAdminOrSystemAdmin || userPermissions.Contains(Permissions.RequestsViewEstimation) || request.AssignedEngineerId == userId;
+            var canViewReport = isAdminOrSystemAdmin || 
+                                userPermissions.Contains(Permissions.RequestsViewEstimation) || 
+                                request.AssignedEngineerId == userId ||
+                                (userPermissions.Contains(Permissions.RequestsViewAllEstimated) && request.Status == RequestStatus.Estimated);
             return MapToResponseDto(request, canViewReport, userPermissions, isAdminOrSystemAdmin);
         }
 
@@ -640,7 +647,7 @@ namespace backend.Services
 
             // Permission-based filtering of attachments
             var hasViewEstimation = isAdminOrSystemAdmin
-                                    || (userPermissions != null && userPermissions.Contains(Permissions.RequestsViewEstimation));
+                                    || (userPermissions != null && (userPermissions.Contains(Permissions.RequestsViewEstimation) || userPermissions.Contains(Permissions.RequestsViewAllEstimated)));
             var hasViewFilteredEstimation = isAdminOrSystemAdmin
                                             || (userPermissions != null && userPermissions.Contains(Permissions.RequestsViewFilteredEstimation));
 

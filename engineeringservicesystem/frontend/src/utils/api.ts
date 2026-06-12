@@ -1,6 +1,6 @@
 import { useAuthStore } from '@/store/store';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5270/api';
 
 async function handleResponse<T>(response: Response): Promise<T> {
   const { logout, notify } = useAuthStore.getState();

@@ -13,7 +13,7 @@ public static class Permissions
     public const string RequestsViewBranch = "Permissions.Requests.ViewBranch";
     public const string RequestsViewAll = "Permissions.Requests.ViewAll";
     public const string RequestsViewAssigned = "Permissions.Requests.ViewAssigned";
-    public const string RequestsViewAllAssigned = "Permissions.Requests.ViewAllAssigned";
+    public const string RequestsViewAllEstimated = "Permissions.Requests.ViewAllEstimated";
 
     // Request Actions
     public const string RequestsCreate = "Permissions.Requests.Create";
@@ -50,7 +50,7 @@ public static class Permissions
             RequestsViewBranch,
             RequestsViewAll,
             RequestsViewAssigned,
-            RequestsViewAllAssigned,
+            RequestsViewAllEstimated,
             RequestsCreate,
             RequestsEdit,
             RequestsDelete,

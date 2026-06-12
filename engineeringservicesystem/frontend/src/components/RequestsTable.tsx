@@ -83,9 +83,11 @@ export default function RequestsTable({
         return true;
       }
 
-      // User with ViewAllEstimated - see any estimated request (status 4) regardless of assignment
-      if (canViewAllEstimated && request.status === 4) {
-        return true;
+      // User with ViewAllEstimated - see any estimated request (status 4) regardless of assignment, or own requests if status is 3 (Assigned)
+      if (canViewAllEstimated) {
+        if (request.status === 4 || (request.assignedEngineerId === currentUserId && request.status === 3)) {
+          return true;
+        }
       }
 
       // Engineering Officer with ViewAssigned - see only own assigned requests (status 3)
