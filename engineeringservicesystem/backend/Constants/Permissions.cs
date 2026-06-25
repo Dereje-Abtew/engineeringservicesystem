@@ -22,11 +22,13 @@ public static class Permissions
     public const string RequestsApprove = "Permissions.Requests.Approve";
     public const string RequestsReject = "Permissions.Requests.Reject";
     public const string RequestsAssign = "Permissions.Requests.Assign";
+    public const string RequestsAssignReject = "Permissions.Requests.AssignReject";
     public const string RequestsManageEngineersWorkLoad = "Permissions.Requests.ManageEngineersWorkLoad";
     public const string RequestsEstimate = "Permissions.Requests.Estimate";
     public const string RequestsViewEstimation = "Permissions.Requests.ViewEstimation";
     public const string RequestsViewFilteredEstimation = "Permissions.Requests.ViewFilteredEstimation";
     public const string RequestsSendFilteredEstimation = "Permissions.Requests.SendFilteredEstimation";
+    public const string RequestsUploadFinalEstimation = "Permissions.Requests.UploadFinalEstimation";
 
     // User Management
     public const string UserManagementView = "Permissions.UserManagement.View";
@@ -57,11 +59,13 @@ public static class Permissions
             RequestsApprove,
             RequestsReject,
             RequestsAssign,
+            RequestsAssignReject,
             RequestsManageEngineersWorkLoad,
             RequestsEstimate,
             RequestsViewEstimation,
             RequestsViewFilteredEstimation,
             RequestsSendFilteredEstimation,
+            RequestsUploadFinalEstimation,
             UserManagementView,
             UserManagementManage,
             RoleManagementView,

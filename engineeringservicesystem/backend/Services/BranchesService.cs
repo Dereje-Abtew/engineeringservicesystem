@@ -45,7 +45,7 @@ namespace backend.Services
             {
                 Id = Guid.NewGuid(),
                 Name = dto.Name,
-                BranchCode = dto.BranchCode,
+                BranchCode = dto.BranchCode ?? "",
                 Location = dto.Location,
                 IsActive = dto.IsActive,
                 CreatedAt = DateTime.UtcNow // Fallback safety metric if database doesn't default it
@@ -64,7 +64,7 @@ namespace backend.Services
 
             // Map updated parameter details back to tracked persistent Entity
             branch.Name = dto.Name;
-            branch.BranchCode = dto.BranchCode;
+            branch.BranchCode = dto.BranchCode ?? "";
             branch.Location = dto.Location;
             branch.IsActive = dto.IsActive;
 

@@ -5,6 +5,7 @@ export interface Attachment {
   fileName: string;
   fileUrl: string;
   documentType?: string;
+  uploadedById?: string;
 }
 
 export interface EstimationRequest {

@@ -27,6 +27,8 @@ namespace backend.Controllers
         public ActionResult<IEnumerable<NotificationDto>> GetNotifications()
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
             var roles = User.Claims.Where(c => c.Type == ClaimTypes.Role).Select(c => c.Value).ToArray();
 
             // delegate to NotificationCenter

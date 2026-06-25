@@ -182,7 +182,7 @@ namespace backend.Services
                 .Where(r => r.BranchUser != null && r.BranchUser.UserBranch != null)
                 .GroupBy(r => new
                 {
-                    BranchId = r.BranchUser.BranchId,
+                    BranchId = r.BranchUser!.BranchId,
                     BranchName = r.BranchUser.UserBranch != null ? r.BranchUser.UserBranch.Name : "Unknown"
                 })
                 .Select(g => new BranchPerformanceDto

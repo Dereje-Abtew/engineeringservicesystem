@@ -271,9 +271,14 @@ namespace backend.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("UploadedById")
+                        .HasColumnType("text");
+
                     b.HasKey("Id");
 
                     b.HasIndex("EstimationRequestId");
+
+                    b.HasIndex("UploadedById");
 
                     b.ToTable("Attachments");
                 });
@@ -429,8 +434,14 @@ namespace backend.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTime?>("EngineerActionDate")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTime?>("EngineerAssignmentDate")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("EngineerRejectionReason")
+                        .HasColumnType("text");
 
                     b.Property<string>("Kebele")
                         .IsRequired()
@@ -607,7 +618,13 @@ namespace backend.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("backend.Models.ApplicationUser", "UploadedBy")
+                        .WithMany()
+                        .HasForeignKey("UploadedById");
+
                     b.Navigation("EstimationRequest");
+
+                    b.Navigation("UploadedBy");
                 });
 
             modelBuilder.Entity("backend.Models.Branch", b =>

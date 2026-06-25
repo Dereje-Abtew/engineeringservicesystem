@@ -2,22 +2,23 @@
 
 import React, { useEffect, useState, useCallback } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
-import { 
-  Typography, Box, Chip, IconButton, Button, Paper, Menu, MenuItem, 
-  ListItemIcon, ListItemText, Dialog, DialogTitle, DialogContent, 
-  DialogActions, DialogContentText, TextField, CircularProgress, Alert, FormHelperText, Card, CardContent, Divider, Tabs, Tab, 
+import {
+  Typography, Box, Chip, IconButton, Button, Paper, Menu, MenuItem,
+  ListItemIcon, ListItemText, Dialog, DialogTitle, DialogContent,
+  DialogActions, DialogContentText, TextField, CircularProgress, Alert, FormHelperText, Card, CardContent, Divider, Tabs, Tab,
   Select, FormControl, InputLabel, Checkbox, FormControlLabel, Zoom, Tooltip, Avatar, Badge, keyframes,
+  Autocomplete, createFilterOptions,
   type SelectChangeEvent
 } from '@mui/material';
 import Grid from '@mui/material/GridLegacy';
-import { 
-  Eye, Plus, CheckCircle, XCircle, Upload, X, FileText, 
-  Users, MapPin, RefreshCw, Trash2, Edit, Download, 
+import {
+  Eye, Plus, CheckCircle, XCircle, Upload, X, FileText,
+  Users, MapPin, RefreshCw, Trash2, Edit, Download,
   Zap, Star, Target, Crown, Home, Building,
-  Ruler, 
+  Ruler,
   // Phone, Mail, User, Key,
   // Sparkles, Brain, Rocket, Shield, Gem, ThumbsUp,
-   Briefcase,
+  Briefcase,
   Trophy, Medal, Compass,
   //  Navigation, Heart, Flame, Settings,BarChart3, 
   Activity,
@@ -154,6 +155,7 @@ interface Attachment {
   fileName: string;
   fileUrl: string;
   documentType: string;
+  uploadedById?: string;
 }
 
 interface RequestFormValues {
@@ -200,7 +202,7 @@ interface AssignmentRecommendation {
   matchReason: string;
 }
 
-type WorkflowActionType = 'checker_approve' | 'checker_reject' | 'manager_approve' | 'manager_reject' | 'manager_assign' | 'manager_manage' | null;
+type WorkflowActionType = 'checker_approve' | 'checker_reject' | 'manager_approve' | 'manager_reject' | 'manager_assign' | 'manager_manage' | 'engineer_reject' | null;
 
 interface ApiErrorResponse {
   message?: string;
@@ -253,17 +255,17 @@ const PasswordChangeDialog = ({ open, onClose }: { open: boolean; onClose: () =>
   const handlePasswordChange = async () => {
     setError('');
     setSuccess('');
-    
+
     if (newPassword !== confirmPassword) {
       setError('New passwords do not match');
       return;
     }
-    
+
     if (newPassword.length < 8) {
       setError('Password must be at least 8 characters');
       return;
     }
-    
+
     setLoading(true);
     try {
       await api.post('/UserManagement/change-password', {
@@ -293,7 +295,7 @@ const PasswordChangeDialog = ({ open, onClose }: { open: boolean; onClose: () =>
       <DialogContent sx={{ pt: 3 }}>
         {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
         {success && <Alert severity="success" sx={{ mb: 3 }}>{success}</Alert>}
-        
+
         <TextField
           fullWidth
           type="password"
@@ -302,7 +304,7 @@ const PasswordChangeDialog = ({ open, onClose }: { open: boolean; onClose: () =>
           onChange={(e) => setCurrentPassword(e.target.value)}
           sx={{ mb: 3 }}
         />
-        
+
         <TextField
           fullWidth
           type="password"
@@ -312,7 +314,7 @@ const PasswordChangeDialog = ({ open, onClose }: { open: boolean; onClose: () =>
           helperText="Password must be at least 8 characters"
           sx={{ mb: 3 }}
         />
-        
+
         <TextField
           fullWidth
           type="password"
@@ -337,13 +339,14 @@ const PasswordChangeDialog = ({ open, onClose }: { open: boolean; onClose: () =>
 
 // Note: hasPermission is consumed inside the dialog via the auth store.
 const ViewDetailsDialog = ({ open, onClose, request }: { open: boolean; onClose: () => void; request: EstimationRequest | null }) => {
-  const { hasPermission } = useAuthStore();
+  const { hasPermission, user } = useAuthStore();
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [loadingAttachments, setLoadingAttachments] = useState(false);
   // Selected attachment ids for the filtered-estimation send action
   const [selectedFilterIds, setSelectedFilterIds] = useState<number[]>([]);
   const [sendingFilter, setSendingFilter] = useState(false);
   const [filterMessage, setFilterMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [uploadingFinal, setUploadingFinal] = useState(false);
 
   // Dialog states for Estimation Excel warnings
   const [estimationExcelWarningOpen, setEstimationExcelWarningOpen] = useState(false);
@@ -381,14 +384,14 @@ const ViewDetailsDialog = ({ open, onClose, request }: { open: boolean; onClose:
     if (fileUrl.startsWith('http')) {
       return fileUrl;
     }
-    
+
     const baseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5270/api').replace(/\/api$/, '');
-    
+
     let cleanPath = fileUrl;
     if (!cleanPath.startsWith('/uploads')) {
       cleanPath = `/uploads/${cleanPath.replace(/^\/+/, '')}`;
     }
-    
+
     return `${baseUrl}${cleanPath}`;
   };
 
@@ -411,7 +414,15 @@ const ViewDetailsDialog = ({ open, onClose, request }: { open: boolean; onClose:
   const toggleFilterSelection = (attachmentId: number) => {
     // Find the attachment to check its document type
     const attachment = attachments.find(a => a.id === attachmentId);
-    
+
+    if (attachment?.documentType === 'Estimation Report') {
+      const hasFinal = attachments.some(a => a.documentType === 'Final Estimation');
+      if (!hasFinal) {
+        setFilterMessage({ type: 'error', text: 'Estimation Report cannot be selected before receiving the Final Estimation.' });
+        return;
+      }
+    }
+
     // If it's an "Estimation Excel" document and we're selecting it, show warning
     if (attachment?.documentType === 'Estimation Excel' && !selectedFilterIds.includes(attachmentId)) {
       setEstimationExcelPendingId(attachmentId);
@@ -430,7 +441,7 @@ const ViewDetailsDialog = ({ open, onClose, request }: { open: boolean; onClose:
   // users with the Requests.ViewFilteredEstimation permission
   const handleSendFilter = async () => {
     if (!request) return;
-    
+
     // Check if any selected attachments are "Estimation Excel"
     const hasEstimationExcel = attachments.some(
       a => a.id != null && selectedFilterIds.includes(a.id) && a.documentType === 'Estimation Excel'
@@ -440,6 +451,43 @@ const ViewDetailsDialog = ({ open, onClose, request }: { open: boolean; onClose:
       setSendWarningOpen(true);
     } else {
       await performSendFilter();
+    }
+  };
+
+  const handleUploadFinalEstimation = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !request) return;
+
+    if (!file.name.toLowerCase().endsWith('.xls') && !file.name.toLowerCase().endsWith('.xlsx')) {
+      setFilterMessage({ type: 'error', text: 'Only Excel files (.xls, .xlsx) are allowed for Final Estimation.' });
+      e.target.value = '';
+      return;
+    }
+
+    setUploadingFinal(true); setFilterMessage(null);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('documentType', 'Final Estimation');
+
+      const uploadRes = await api.post<{ url: string, fileName: string, filePath: string }>('/Attachments/upload', fd, { silent: true });
+
+      await api.post(`/EstimationRequests/${request.id}/final-estimation`, [{
+        fileName: uploadRes.fileName,
+        filePath: uploadRes.filePath,
+        documentType: 'Final Estimation'
+      }]);
+
+      setFilterMessage({ type: 'success', text: 'Final estimation uploaded successfully' });
+      // Refresh attachments
+      const fullRequest = await api.get<EstimationRequest>(`/EstimationRequests/${request.id}`, { silent: true });
+      setAttachments(fullRequest?.attachments ?? []);
+    } catch (err: unknown) {
+      const msg = getErrorMessage(err, 'Failed to upload final estimation');
+      setFilterMessage({ type: 'error', text: msg });
+    } finally {
+      setUploadingFinal(false);
+      e.target.value = '';
     }
   };
 
@@ -505,7 +553,7 @@ const ViewDetailsDialog = ({ open, onClose, request }: { open: boolean; onClose:
           <Grid item xs={12}><Typography variant="subtitle1" fontWeight="700" sx={{ color: '#064E3B', mb: 2, borderBottom: '2px solid #064E3B', pb: 1 }}>Basic Information</Typography></Grid>
           <Grid item xs={12} md={6}><Typography variant="body2" sx={{ color: '#64748b' }}>Applicant Name</Typography><Typography variant="body1" fontWeight="600">{request.applicantName}</Typography></Grid>
           <Grid item xs={12} md={6}><Typography variant="body2" sx={{ color: '#64748b' }}>Owner Name</Typography><Typography variant="body1" fontWeight="600">{request.ownerName}</Typography></Grid>
-          <Grid item xs={12} md={6}><Typography variant="body2" sx={{ color: '#64748b' }}>LHU Number</Typography><Typography variant="body1" fontWeight="600" fontFamily="monospace">{request.lhuNo}</Typography></Grid>
+          <Grid item xs={12} md={6}><Typography variant="body2" sx={{ color: '#64748b' }}>LHC Number</Typography><Typography variant="body1" fontWeight="600" fontFamily="monospace">{request.lhuNo}</Typography></Grid>
           <Grid item xs={12} md={6}><Typography variant="body2" sx={{ color: '#64748b' }}>Status</Typography><Chip label={statusMap[request.status]?.label} size="small" sx={{ bgcolor: statusMap[request.status]?.bg, color: statusMap[request.status]?.color, fontWeight: 600 }} /></Grid>
           {request.lastRejectionReason && (
             <Grid item xs={12}>
@@ -517,7 +565,7 @@ const ViewDetailsDialog = ({ open, onClose, request }: { open: boolean; onClose:
           )}
           <Grid item xs={12} md={6}><Typography variant="body2" sx={{ color: '#64748b' }}>Created At</Typography><Typography variant="body1" fontWeight="600">{new Date(request.createdAt).toLocaleDateString()}</Typography></Grid>
           <Grid item xs={12} md={6}><Typography variant="body2" sx={{ color: '#64748b' }}>Assigned Engineer</Typography><Typography variant="body1" fontWeight="600">{request.assignedEngineerName || 'Not Assigned'}</Typography></Grid>
-          
+
           <Grid item xs={12}><Typography variant="subtitle1" fontWeight="700" sx={{ color: '#064E3B', mt: 2, mb: 2, borderBottom: '2px solid #064E3B', pb: 1 }}>Property Details</Typography></Grid>
           <Grid item xs={12} md={6}><Typography variant="body2" sx={{ color: '#64748b' }}>Plot Area</Typography><Typography variant="body1" fontWeight="600">{request.plotArea?.toLocaleString()} m²</Typography></Grid>
           <Grid item xs={12} md={6}><Typography variant="body2" sx={{ color: '#64748b' }}>Building Type</Typography><Typography variant="body1" fontWeight="600">{request.buildingType}</Typography></Grid>
@@ -529,109 +577,155 @@ const ViewDetailsDialog = ({ open, onClose, request }: { open: boolean; onClose:
           {request.purpose === 'Project Finance' && (
             <>
               <Grid item xs={12} md={6}><Typography variant="body2" sx={{ color: '#64748b' }}>Project Finance Document</Typography><Typography variant="body1" fontWeight="600">{(request as any).projectFinanceDocType || '-'}</Typography></Grid>
-              <Grid item xs={12} md={6}><Typography variant="body2" sx={{ color: '#64748b' }}>Bill of Penalty</Typography><Typography variant="body1" fontWeight="600">{(request as any).billOfPenalty ? 'Yes' : 'No'}</Typography></Grid>
+              <Grid item xs={12} md={6}><Typography variant="body2" sx={{ color: '#64748b' }}>Bill of Quantity</Typography><Typography variant="body1" fontWeight="600">{(request as any).billOfPenalty ? 'Yes' : 'No'}</Typography></Grid>
             </>
           )}
-          
+
           <Grid item xs={12}><Typography variant="subtitle1" fontWeight="700" sx={{ color: '#064E3B', mt: 2, mb: 2, borderBottom: '2px solid #064E3B', pb: 1 }}>Attachments ({attachments.length})</Typography></Grid>
+          {hasPermission(Permissions.RequestsUploadFinalEstimation) && attachments.some(a => a.documentType === 'Estimation Excel') && attachments.some(a => a.documentType === 'Relevant Photo') && (
+            <Grid item xs={12}>
+              <Alert severity="info" sx={{ mb: 2, borderRadius: '8px', bgcolor: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd' }}>
+                <Typography variant="body2">
+                  Please review the documents. Once the valuation is approved, <strong>upload the Final Estimation</strong>.
+                  After uploading, please <strong>select the Estimation Report checkbox</strong> and click "Send" to send it to the checker.
+                </Typography>
+              </Alert>
+            </Grid>
+          )}
           <Grid item xs={12}>
             {loadingAttachments ? <Box sx={{ textAlign: 'center', py: 4 }}><CircularProgress /></Box>
-            : attachments.length === 0 ? <Box sx={{ p: 4, bgcolor: '#f8fafc', textAlign: 'center' }}><Typography variant="body2" sx={{ color: '#94a3b8' }}>No attachments</Typography></Box>
-            : (() => {
-                const canSelectEstimationDocs = hasPermission(Permissions.RequestsViewEstimation);
-                const selectableCount = attachments.filter(
-                  a => a.id != null && SELECTABLE_DOCUMENT_TYPES.has(a.documentType)
-                ).length;
-                return (
-                  <Box>
-                    <Grid container spacing={2}>
-                      {attachments.map((att, idx) => {
-                        const isSelectable = canSelectEstimationDocs
-                          && att.id != null
-                          && SELECTABLE_DOCUMENT_TYPES.has(att.documentType);
-                        const isSelected = isSelectable && selectedFilterIds.includes(att.id as number);
-                        return (
-                          <Grid item xs={12} sm={6} key={att.id || idx}>
-                            <Card sx={{
-                              borderRadius: '12px',
-                              border: isSelected ? '2px solid #10b981' : '1px solid #e2e8f0',
-                              bgcolor: isSelected ? 'rgba(16, 185, 129, 0.04)' : 'white',
-                              transition: 'all 0.2s ease'
-                            }}>
-                              <CardContent>
-                                <Box display="flex" justifyContent="space-between" alignItems="center" gap={1}>
-                                  <Box display="flex" alignItems="center" gap={1} sx={{ minWidth: 0, flex: 1 }}>
-                                    {isSelectable && (
-                                      <Checkbox
-                                        checked={isSelected}
-                                        onChange={() => toggleFilterSelection(att.id as number)}
-                                        sx={{
-                                          color: '#10b981',
-                                          '&.Mui-checked': { color: '#10b981' },
-                                          p: 0.5
-                                        }}
-                                        data-testid={`filter-checkbox-${att.id}`}
-                                      />
-                                    )}
-                                    <Box sx={{ minWidth: 0 }}>
-                                      <Typography variant="subtitle2" fontWeight="600" noWrap title={att.fileName}>{att.fileName}</Typography>
-                                      <Chip label={att.documentType} size="small" sx={{ mt: 0.5 }} />
+              : attachments.length === 0 ? <Box sx={{ p: 4, bgcolor: '#f8fafc', textAlign: 'center' }}><Typography variant="body2" sx={{ color: '#94a3b8' }}>No attachments</Typography></Box>
+                : (() => {
+                  const canSelectEstimationDocs = hasPermission(Permissions.RequestsViewEstimation);
+                  const canViewFinalEstimation = (userId: string | undefined) => {
+                    if (!userId) return false;
+                    return userId === request.assignedEngineerId;
+                  };
+                  const canViewFinalEstimationAsUploader = (att: Attachment) => {
+                    return user?.id != null && att.uploadedById === user.id;
+                  };
+                  const hasFinalEstimation = attachments.some(a => a.documentType === 'Final Estimation');
+                  const selectableCount = attachments.filter(
+                    a => a.id != null && SELECTABLE_DOCUMENT_TYPES.has(a.documentType)
+                  ).length;
+                  return (
+                    <Box>
+                      <Grid container spacing={2}>
+                        {attachments.map((att, idx) => {
+                          const isSelectable = canSelectEstimationDocs
+                            && att.id != null
+                            && SELECTABLE_DOCUMENT_TYPES.has(att.documentType);
+                          const isSelected = isSelectable && selectedFilterIds.includes(att.id as number);
+                          const isFinalEstimation = att.documentType === 'Final Estimation';
+                          const isEstimationReport = att.documentType === 'Estimation Report';
+                          const isDisabledReport = isEstimationReport && !hasFinalEstimation;
+                          
+                          if (isFinalEstimation && !canViewFinalEstimation(user?.id) && !canViewFinalEstimationAsUploader(att)) return null;
+                          
+                          return (
+                            <Grid item xs={12} sm={6} key={att.id || idx}>
+                              <Card sx={{
+                                borderRadius: '12px',
+                                border: isFinalEstimation ? '2px solid #8b5cf6' : (isSelected ? '2px solid #10b981' : '1px solid #e2e8f0'),
+                                bgcolor: isSelected ? 'rgba(16, 185, 129, 0.04)' : 'white',
+                                transition: 'all 0.2s ease',
+                                animation: isFinalEstimation ? 'pulse-border 2s infinite' : 'none',
+                                '@keyframes pulse-border': {
+                                  '0%': { borderColor: '#8b5cf6', boxShadow: '0 0 0 0 rgba(139, 92, 246, 0.4)' },
+                                  '50%': { borderColor: '#c4b5fd', boxShadow: '0 0 0 6px rgba(139, 92, 246, 0)' },
+                                  '100%': { borderColor: '#8b5cf6', boxShadow: '0 0 0 0 rgba(139, 92, 246, 0)' }
+                                }
+                              }}>
+                                <CardContent>
+                                  <Box display="flex" justifyContent="space-between" alignItems="center" gap={1}>
+                                    <Box display="flex" alignItems="center" gap={1} sx={{ minWidth: 0, flex: 1 }}>
+                                      {isSelectable && (
+                                        <Checkbox
+                                          checked={isSelected}
+                                          disabled={isDisabledReport}
+                                          onChange={() => toggleFilterSelection(att.id as number)}
+                                          sx={{
+                                            color: '#10b981',
+                                            '&.Mui-checked': { color: '#10b981' },
+                                            p: 0.5
+                                          }}
+                                          data-testid={`filter-checkbox-${att.id}`}
+                                        />
+                                      )}
+                                      <Box sx={{ minWidth: 0 }}>
+                                        <Typography variant="subtitle2" fontWeight="600" noWrap title={att.fileName}>{att.fileName}</Typography>
+                                        <Chip label={att.documentType} size="small" sx={{ mt: 0.5 }} />
+                                      </Box>
+                                    </Box>
+                                    <Box display="flex" gap={0.5} flexShrink={0}>
+                                      <Tooltip title="View document">
+                                        <IconButton onClick={() => handleViewFile(att.fileUrl)} size="small">
+                                          <Eye size={18} />
+                                        </IconButton>
+                                      </Tooltip>
+                                      <Tooltip title="Download document">
+                                        <IconButton onClick={() => handleDownload(att.fileUrl, att.fileName)} size="small">
+                                          <Download size={18} />
+                                        </IconButton>
+                                      </Tooltip>
                                     </Box>
                                   </Box>
-                                  <Box display="flex" gap={0.5} flexShrink={0}>
-                                    <Tooltip title="View document">
-                                      <IconButton onClick={() => handleViewFile(att.fileUrl)} size="small">
-                                        <Eye size={18} />
-                                      </IconButton>
-                                    </Tooltip>
-                                    <Tooltip title="Download document">
-                                      <IconButton onClick={() => handleDownload(att.fileUrl, att.fileName)} size="small">
-                                        <Download size={18} />
-                                      </IconButton>
-                                    </Tooltip>
-                                  </Box>
-                                </Box>
-                              </CardContent>
-                            </Card>
-                          </Grid>
-                        );
-                      })}
-                    </Grid>
+                                </CardContent>
+                              </Card>
+                            </Grid>
+                          );
+                        })}
+                      </Grid>
 
-                    {/* Send filter button: only for users with Requests.ViewEstimation permission */}
-                    {canSelectEstimationDocs && selectableCount > 0 && (
-                      <Box sx={{ mt: 3, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1.5 }}>
-                        {filterMessage && (
-                          <Alert
-                            severity={filterMessage.type === 'success' ? 'success' : 'error'}
-                            onClose={() => setFilterMessage(null)}
-                            sx={{ width: '100%' }}
-                          >
-                            {filterMessage.text}
-                          </Alert>
-                        )}
-                        <Button
-                          variant="contained"
-                          startIcon={sendingFilter ? <CircularProgress size={18} color="inherit" /> : <Send size={18} />}
-                          onClick={handleSendFilter}
-                          disabled={sendingFilter}
-                          sx={{
-                            bgcolor: '#064e3b',
-                            color: 'white',
-                            fontWeight: 800,
-                            borderRadius: '12px',
-                            px: 3,
-                            boxShadow: '0 6px 14px rgba(6, 78, 59, 0.25)',
-                            '&:hover': { bgcolor: '#065f46' }
-                          }}
-                        >
-                          {sendingFilter ? 'Sending...' : `Send (${selectedFilterIds.length} selected)`}
-                        </Button>
-                      </Box>
-                    )}
-                  </Box>
-                );
-              })()}
+                      {/* Send filter & Upload Final Estimation buttons */}
+                      {(canSelectEstimationDocs || (hasPermission(Permissions.RequestsUploadFinalEstimation) && attachments.some(a => a.documentType === 'Estimation Excel') && attachments.some(a => a.documentType === 'Relevant Photo'))) && (
+                        <Box sx={{ mt: 3, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1.5 }}>
+                          {filterMessage && (
+                            <Alert
+                              severity={filterMessage.type === 'success' ? 'success' : 'error'}
+                              onClose={() => setFilterMessage(null)}
+                              sx={{ width: '100%' }}
+                            >
+                              {filterMessage.text}
+                            </Alert>
+                          )}
+                          <Box sx={{ display: 'flex', gap: 2 }}>
+                            {hasPermission(Permissions.RequestsUploadFinalEstimation) && attachments.some(a => a.documentType === 'Estimation Excel') && attachments.some(a => a.documentType === 'Relevant Photo') && (
+                              <Button component="label" variant="outlined" disabled={uploadingFinal}
+                                startIcon={uploadingFinal ? <CircularProgress size={18} color="inherit" /> : <FileText size={18} />}
+                                sx={{
+                                  borderColor: '#0891b2', color: '#0891b2', fontWeight: 800, borderRadius: '12px', px: 3,
+                                  '&:hover': { bgcolor: 'rgba(8, 145, 178, 0.05)' }
+                                }}>
+                                {uploadingFinal ? 'Uploading...' : 'Upload Final Estimation'}
+                                <input type="file" hidden onChange={handleUploadFinalEstimation} accept=".xls,.xlsx" />
+                              </Button>
+                            )}
+                            {canSelectEstimationDocs && selectableCount > 0 && (
+                              <Button
+                                variant="contained"
+                                startIcon={sendingFilter ? <CircularProgress size={18} color="inherit" /> : <Send size={18} />}
+                                onClick={handleSendFilter}
+                                disabled={sendingFilter}
+                                sx={{
+                                  bgcolor: '#064e3b',
+                                  color: 'white',
+                                  fontWeight: 800,
+                                  borderRadius: '12px',
+                                  px: 3,
+                                  boxShadow: '0 6px 14px rgba(6, 78, 59, 0.25)',
+                                  '&:hover': { bgcolor: '#065f46' }
+                                }}
+                              >
+                                {sendingFilter ? 'Sending...' : `Send (${selectedFilterIds.length} selected)`}
+                              </Button>
+                            )}
+                          </Box>
+                        </Box>
+                      )}
+                    </Box>
+                  );
+                })()}
           </Grid>
 
           {/* Filtered Estimation Documents - for users with Requests.ViewFilteredEstimation */}
@@ -672,7 +766,7 @@ const ViewDetailsDialog = ({ open, onClose, request }: { open: boolean; onClose:
               </Paper>
             </Grid>
           )}
-          
+
           {request.report ? (
             <>
               <Grid item xs={12}><Typography variant="subtitle1" fontWeight="700" sx={{ color: '#064E3B', mt: 2, mb: 2, borderBottom: '2px solid #064E3B', pb: 1 }}>Valuation Report</Typography></Grid>
@@ -815,17 +909,17 @@ const ViewDetailsDialog = ({ open, onClose, request }: { open: boolean; onClose:
 // Estimation Form Dialog - WORKING VERSION FROM REFERENCE CODE
 // =================================================================
 
-const EstimationFormDialog = ({ 
-  open, 
-  onClose, 
-  request, 
+const EstimationFormDialog = ({
+  open,
+  onClose,
+  request,
   onSuccess,
   isEdit = false,
   existingReport = null
-}: { 
-  open: boolean; 
-  onClose: () => void; 
-  request: EstimationRequest | null; 
+}: {
+  open: boolean;
+  onClose: () => void;
+  request: EstimationRequest | null;
   onSuccess: () => void;
   isEdit?: boolean;
   existingReport?: EstimationRequest['report'] | null;
@@ -876,7 +970,8 @@ const EstimationFormDialog = ({
     }
   }, [open, request]);
 
-  const attachmentTypes = ['Estimation Excel', 'Relevant Photo', 'Estimation Report'];
+  const hasFinalEstimation = (request?.attachments || []).some(a => a.documentType === 'Final Estimation');
+  const requiredAttachmentTypes = hasFinalEstimation ? ['Estimation Report'] : ['Estimation Excel', 'Relevant Photo'];
   interface ValuationFormValues {
     estimatedValue: string;
     siteVisitDate: string;
@@ -898,15 +993,11 @@ const EstimationFormDialog = ({
         .transform((value, originalValue) => (originalValue === '' ? null : value))
         .positive('Must be positive')
         .typeError('Must be a valid number'),
-      remarks: Yup.string()
-        .required('Remarks are required')
-        .min(1, 'Remarks must be at least 1 character')
-        .max(1000, 'Remarks cannot exceed 1000 characters'),
       siteVisitDate: Yup.date().required('Site visit date is required'),
     }),
     validate: () => {
       const errors: Record<string, string> = {};
-      const missingAttachments = attachmentTypes.filter(type => !reportAttachments.some(a => a.documentType === type));
+      const missingAttachments = requiredAttachmentTypes.filter(type => !reportAttachments.some(a => a.documentType === type));
       if (missingAttachments.length > 0) {
         errors.attachments = `Required uploads: ${missingAttachments.join(', ')}`;
       }
@@ -921,7 +1012,7 @@ const EstimationFormDialog = ({
 Plot Area: ${request.plotArea} sqm
 Building Type: ${request.buildingType}
 Location: ${request.subCity}, ${request.kebele}
-LHU Number: ${request.lhuNo}
+LHC Number: ${request.lhuNo}
         `.trim();
 
         const payload: any = {
@@ -943,7 +1034,7 @@ LHU Number: ${request.lhuNo}
           await api.post(`/EstimationRequests/${request.id}/report`, payload);
           notify('Estimation submitted successfully!', 'success');
         }
-        
+
         onSuccess();
         onClose();
         formik.resetForm();
@@ -987,12 +1078,36 @@ LHU Number: ${request.lhuNo}
             <Typography variant="subtitle2" fontWeight="600">Property Summary</Typography>
             <Grid container spacing={1} mt={0.5}>
               <Grid item xs={6}><Typography variant="caption">Applicant:</Typography><Typography variant="body2" fontWeight="500">{request.applicantName}</Typography></Grid>
-              <Grid item xs={6}><Typography variant="caption">LHU:</Typography><Typography variant="body2" fontWeight="500">{request.lhuNo}</Typography></Grid>
+              <Grid item xs={6}><Typography variant="caption">LHC:</Typography><Typography variant="body2" fontWeight="500">{request.lhuNo}</Typography></Grid>
               <Grid item xs={6}><Typography variant="caption">Plot Area:</Typography><Typography variant="body2" fontWeight="700">{request.plotArea} m²</Typography></Grid>
               <Grid item xs={6}><Typography variant="caption">Building Type:</Typography><Typography variant="body2" fontWeight="500">{request.buildingType}</Typography></Grid>
             </Grid>
           </Paper>
-          
+
+          <Alert
+            severity={hasFinalEstimation ? "success" : "info"}
+            sx={{
+              mb: 3,
+              borderRadius: '8px',
+              animation: hasFinalEstimation ? 'pulse-alert 2s infinite' : 'none',
+              '@keyframes pulse-alert': {
+                '0%': { transform: 'scale(1)', boxShadow: '0 0 0 0 rgba(16, 185, 129, 0.4)' },
+                '50%': { transform: 'scale(1.01)', boxShadow: '0 0 0 8px rgba(16, 185, 129, 0)' },
+                '100%': { transform: 'scale(1)', boxShadow: '0 0 0 0 rgba(16, 185, 129, 0)' }
+              }
+            }}
+          >
+            {hasFinalEstimation ? (
+              <Typography variant="body2" sx={{ fontWeight: 800, color: '#065f46' }}>
+                🎉 Final Estimation is now available! The Estimation Report upload is active. Please upload and submit your Estimation Report to the manager.
+              </Typography>
+            ) : (
+              <Typography variant="body2">
+                Waiting for the <strong>Final Estimation</strong> to be uploaded by the manager (requires the "Estimation Excel" and "Relevant Photo PDF" to be uploaded first). The Estimation Report upload is disabled until then. Once received, it will become active. Please continue submitting only active files for now.
+              </Typography>
+            )}
+          </Alert>
+
           <Grid container spacing={3}>
             <input type="hidden" name="siteVisitDate" value={formik.values.siteVisitDate} />
             <Grid item xs={12} md={6}>
@@ -1010,8 +1125,8 @@ LHU Number: ${request.lhuNo}
               />
             </Grid>
             <Grid item xs={12} md={6}>
-              <Typography variant="body2" sx={{ color: '#64748b', mb: 1 }}>Estimation Excel *</Typography>
-              <Button component="label" variant="outlined" startIcon={reportUploading ? <CircularProgress size={14} /> : <Upload size={14} />} disabled={reportUploading}>
+              <Typography variant="body2" sx={{ color: '#64748b', mb: 1 }}>Estimation Excel {hasFinalEstimation ? '' : '*'}</Typography>
+              <Button component="label" variant="outlined" startIcon={reportUploading ? <CircularProgress size={14} /> : <Upload size={14} />} disabled={reportUploading || hasFinalEstimation}>
                 Upload Excel
                 <input type="file" hidden onChange={(e) => handleUploadReportFile(e, 'Estimation Excel')} accept=".xlsx,.xls" />
               </Button>
@@ -1020,8 +1135,8 @@ LHU Number: ${request.lhuNo}
               </Typography>
             </Grid>
             <Grid item xs={12} md={6}>
-              <Typography variant="body2" sx={{ color: '#64748b', mb: 1 }}>Relevant Photo PDF *</Typography>
-              <Button component="label" variant="outlined" startIcon={reportUploading ? <CircularProgress size={14} /> : <Upload size={14} />} disabled={reportUploading}>
+              <Typography variant="body2" sx={{ color: '#64748b', mb: 1 }}>Relevant Photo PDF {hasFinalEstimation ? '' : '*'}</Typography>
+              <Button component="label" variant="outlined" startIcon={reportUploading ? <CircularProgress size={14} /> : <Upload size={14} />} disabled={reportUploading || hasFinalEstimation}>
                 Upload PDF
                 <input type="file" hidden onChange={(e) => handleUploadReportFile(e, 'Relevant Photo')} accept=".pdf,.doc,.docx" />
               </Button>
@@ -1030,8 +1145,8 @@ LHU Number: ${request.lhuNo}
               </Typography>
             </Grid>
             <Grid item xs={12} md={6}>
-              <Typography variant="body2" sx={{ color: '#64748b', mb: 1 }}>Estimation Report *</Typography>
-              <Button component="label" variant="outlined" startIcon={reportUploading ? <CircularProgress size={14} /> : <Upload size={14} />} disabled={reportUploading}>
+              <Typography variant="body2" sx={{ color: '#64748b', mb: 1 }}>Estimation Report {hasFinalEstimation ? '*' : ''}</Typography>
+              <Button component="label" variant="outlined" startIcon={reportUploading ? <CircularProgress size={14} /> : <Upload size={14} />} disabled={reportUploading || !hasFinalEstimation}>
                 Upload Report
                 <input type="file" hidden onChange={(e) => handleUploadReportFile(e, 'Estimation Report')} accept=".pdf,.doc,.docx" />
               </Button>
@@ -1044,22 +1159,7 @@ LHU Number: ${request.lhuNo}
                 <Alert severity="error">{formik.errors.attachments || reportUploadError}</Alert>
               </Grid>
             )}
-            <Grid item xs={12}>
-              <TextField
-                fullWidth
-                multiline
-                rows={3}
-                label="Remarks *"
-                name="remarks"
-                value={formik.values.remarks}
-                onChange={formik.handleChange}
-                onBlur={formik.handleBlur}
-                error={formik.touched.remarks && Boolean(formik.errors.remarks)}
-                helperText={formik.touched.remarks ? String(formik.errors.remarks || '') : ''}
-                placeholder="Enter overall remarks and summary of the valuation..."
-                required
-              />
-            </Grid>
+
           </Grid>
         </DialogContent>
         <DialogActions sx={{ p: 3, bgcolor: '#f8fafc', borderTop: '1px solid #e2e8f0', gap: 2 }}>
@@ -1099,7 +1199,46 @@ const EthiopianLocationSelectors = ({ formik }: EthiopianLocationSelectorsProps)
   const [subCities, setSubCities] = useState<EthiopianSubCity[]>([]);
   const [kebeles, setKebeles] = useState<string[]>([]);
 
+  // Historical locations fetched from database
+  const [historicalCities, setHistoricalCities] = useState<string[]>([]);
+  const [historicalSubCities, setHistoricalSubCities] = useState<string[]>([]);
+  const [historicalKebeles, setHistoricalKebeles] = useState<string[]>([]);
+
   useEffect(() => { fetchEthiopianLocations().then(setRegions); }, []);
+
+  // Fetch historical locations from backend on mount
+  useEffect(() => {
+    api.get<{ cities: string[]; subCities: string[]; kebeles: string[] }>('/EstimationRequests/historical-locations')
+      .then(data => {
+        setHistoricalCities(data.cities || []);
+        setHistoricalSubCities(data.subCities || []);
+        setHistoricalKebeles(data.kebeles || []);
+      })
+      .catch(() => { /* silently ignore if API fails */ });
+  }, []);
+
+  // Merge constants with historical: add historical entries that aren't already in constants
+  const mergedCities = (baseCities: EthiopianCity[]): EthiopianCity[] => {
+    const existingNames = new Set(baseCities.map(c => c.name.toLowerCase()));
+    const extras = historicalCities
+      .filter(h => !existingNames.has(h.toLowerCase()))
+      .map(h => ({ id: `hist-${h}`, name: h, nameAmharic: '', subCities: [] }));
+    return [...baseCities, ...extras];
+  };
+
+  const mergedSubCities = (baseSubCities: EthiopianSubCity[]): EthiopianSubCity[] => {
+    const existingNames = new Set(baseSubCities.map(s => s.name.toLowerCase()));
+    const extras = historicalSubCities
+      .filter(h => !existingNames.has(h.toLowerCase()))
+      .map(h => ({ id: `hist-${h}`, name: h, nameAmharic: '', kebeles: [] }));
+    return [...baseSubCities, ...extras];
+  };
+
+  const mergedKebeles = (baseKebeles: string[]): string[] => {
+    const existingNames = new Set(baseKebeles.map(k => k.toLowerCase()));
+    const extras = historicalKebeles.filter(h => !existingNames.has(h.toLowerCase()));
+    return [...baseKebeles, ...extras];
+  };
 
   const handleRegion = (e: SelectChangeEvent<string> | React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const id = e.target.value as string;
@@ -1126,11 +1265,36 @@ const EthiopianLocationSelectors = ({ formik }: EthiopianLocationSelectorsProps)
     setKebeles(s?.kebeles || []);
   };
 
-  const handleKebele = (e: SelectChangeEvent<string> | React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const val = e.target.value as string;
+  const handleKebele = (e: any, newValue: string | null) => {
+    const val = newValue || '';
     formik.setFieldValue('kebeleName', val);
     formik.setFieldValue('kebele', val);
   };
+
+  const normalizeString = (str: string) => str ? str.toLowerCase().replace(/[aeiou\s-]/g, '') : '';
+  
+  const createFuzzyFilter = <T extends { id?: string; name: string } | string>() => (
+    options: T[],
+    state: { inputValue: string }
+  ) => {
+    const inputValue = state.inputValue;
+    if (!inputValue) return options;
+    const normalizedInput = normalizeString(inputValue);
+    return options.filter((option) => {
+      const optionLabel = typeof option === 'string' ? option : option.name;
+      const normalizedOption = normalizeString(optionLabel);
+      return normalizedOption.includes(normalizedInput) || optionLabel.toLowerCase().includes(inputValue.toLowerCase());
+    });
+  };
+
+  const cityFilterOptions = createFuzzyFilter<EthiopianCity>();
+  const subCityFilterOptions = createFuzzyFilter<EthiopianSubCity>();
+  const kebeleFilterOptions = createFuzzyFilter<string>();
+
+  // Compute final merged option lists
+  const cityOptions = mergedCities(cities);
+  const subCityOptions = mergedSubCities(subCities);
+  const kebeleOptions = mergedKebeles(kebeles);
 
   return (
     <Box
@@ -1152,34 +1316,115 @@ const EthiopianLocationSelectors = ({ formik }: EthiopianLocationSelectorsProps)
         </FormControl>
       </Box>
       <Box sx={{ minWidth: 0, width: '100%' }}>
-        <FormControl fullWidth required disabled={!formik.values.region} error={formik.touched.cityId && Boolean(formik.errors.cityId)} sx={requestSelectSx}>
-          <InputLabel>City</InputLabel>
-          <Select value={formik.values.cityId || ''} onChange={handleCity} onBlur={formik.handleBlur} name="cityId" label="City">
-            <MenuItem value=""><em>Select City</em></MenuItem>
-            {cities.map(c => <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>)}
-          </Select>
-          {formik.touched.cityId && formik.errors.cityId && <FormHelperText error>{formik.errors.cityId}</FormHelperText>}
-        </FormControl>
+        <Autocomplete
+          freeSolo
+          disabled={!formik.values.region}
+          options={cityOptions}
+          getOptionLabel={(option) => typeof option === 'string' ? option : option.name}
+          filterOptions={cityFilterOptions}
+          value={cityOptions.find(c => c.id === formik.values.cityId) || formik.values.city || ''}
+          onChange={(e, newValue) => {
+            if (typeof newValue === 'string') {
+              formik.setFieldValue('cityId', '');
+              formik.setFieldValue('city', newValue);
+              setSubCities([]); setKebeles([]);
+            } else if (newValue) {
+              // if it's a historical city (no real subCities), reset sub-city options to empty
+              formik.setFieldValue('cityId', newValue.id);
+              formik.setFieldValue('city', newValue.name);
+              setSubCities(newValue.subCities || []); setKebeles([]);
+            } else {
+              formik.setFieldValue('cityId', '');
+              formik.setFieldValue('city', '');
+              setSubCities([]); setKebeles([]);
+            }
+            formik.setFieldValue('subCityId', ''); formik.setFieldValue('subCity', '');
+            formik.setFieldValue('kebeleName', ''); formik.setFieldValue('kebele', '');
+          }}
+          onInputChange={(e, newInputValue) => {
+             // allow typing custom cities without matching an option
+             formik.setFieldValue('city', newInputValue);
+          }}
+          renderInput={(params) => (
+            <TextField
+              {...params}
+              label="City"
+              name="city"
+              required
+              error={formik.touched.city && Boolean(formik.errors.city)}
+              helperText={formik.touched.city && formik.errors.city as React.ReactNode}
+              sx={requestSelectSx}
+              onBlur={formik.handleBlur}
+            />
+          )}
+        />
       </Box>
       <Box sx={{ minWidth: 0, width: '100%' }}>
-        <FormControl fullWidth required disabled={!formik.values.cityId} error={formik.touched.subCityId && Boolean(formik.errors.subCityId)} sx={requestSelectSx}>
-          <InputLabel>Sub-City</InputLabel>
-          <Select value={formik.values.subCityId || ''} onChange={handleSubCity} onBlur={formik.handleBlur} name="subCityId" label="Sub-City">
-            <MenuItem value=""><em>Select Sub-City</em></MenuItem>
-            {subCities.map(s => <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>)}
-          </Select>
-          {formik.touched.subCityId && formik.errors.subCityId && <FormHelperText error>{formik.errors.subCityId}</FormHelperText>}
-        </FormControl>
+        <Autocomplete
+          freeSolo
+          disabled={!formik.values.city}
+          options={subCityOptions}
+          getOptionLabel={(option) => typeof option === 'string' ? option : option.name}
+          filterOptions={subCityFilterOptions}
+          value={subCityOptions.find(s => s.id === formik.values.subCityId) || formik.values.subCity || ''}
+          onChange={(e, newValue) => {
+            if (typeof newValue === 'string') {
+              formik.setFieldValue('subCityId', '');
+              formik.setFieldValue('subCity', newValue);
+              setKebeles([]);
+            } else if (newValue) {
+              formik.setFieldValue('subCityId', newValue.id);
+              formik.setFieldValue('subCity', newValue.name);
+              setKebeles(newValue.kebeles || []);
+            } else {
+              formik.setFieldValue('subCityId', '');
+              formik.setFieldValue('subCity', '');
+              setKebeles([]);
+            }
+            formik.setFieldValue('kebeleName', ''); formik.setFieldValue('kebele', '');
+          }}
+          onInputChange={(e, newInputValue) => {
+             formik.setFieldValue('subCity', newInputValue);
+          }}
+          renderInput={(params) => (
+            <TextField
+              {...params}
+              label="Sub-City"
+              name="subCity"
+              required
+              error={formik.touched.subCity && Boolean(formik.errors.subCity)}
+              helperText={formik.touched.subCity && formik.errors.subCity as React.ReactNode}
+              sx={requestSelectSx}
+              onBlur={formik.handleBlur}
+            />
+          )}
+        />
       </Box>
       <Box sx={{ minWidth: 0, width: '100%' }}>
-        <FormControl fullWidth required disabled={!formik.values.subCityId} error={formik.touched.kebeleName && Boolean(formik.errors.kebeleName)} sx={requestSelectSx}>
-          <InputLabel>Kebele</InputLabel>
-          <Select value={formik.values.kebeleName || ''} onChange={handleKebele} onBlur={formik.handleBlur} name="kebeleName" label="Kebele">
-            <MenuItem value=""><em>Select Kebele</em></MenuItem>
-            {kebeles.map(k => <MenuItem key={k} value={k}>{k}</MenuItem>)}
-          </Select>
-          {formik.touched.kebeleName && formik.errors.kebeleName && <FormHelperText error>{formik.errors.kebeleName}</FormHelperText>}
-        </FormControl>
+        <Autocomplete
+          freeSolo
+          disabled={!formik.values.subCity}
+          options={kebeleOptions}
+          filterOptions={kebeleFilterOptions}
+          value={formik.values.kebele || ''}
+          onChange={handleKebele}
+          onInputChange={(e, newInputValue) => {
+             formik.setFieldValue('kebeleName', newInputValue);
+             formik.setFieldValue('kebele', newInputValue);
+          }}
+          renderInput={(params) => (
+            <TextField
+              {...params}
+              label="Kebele"
+              name="kebele"
+              required
+              error={formik.touched.kebele && Boolean(formik.errors.kebele)}
+              helperText={formik.touched.kebele && formik.errors.kebele as React.ReactNode}
+              sx={requestSelectSx}
+              onBlur={formik.handleBlur}
+            />
+          )}
+        />
       </Box>
     </Box>
   );
@@ -1189,13 +1434,13 @@ const EthiopianLocationSelectors = ({ formik }: EthiopianLocationSelectorsProps)
 // Animated Recommendation Card Component
 // =================================================================
 
-const AnimatedRecommendationCard = ({ 
-  recommendation, 
-  isSelected, 
-  onClick, 
+const AnimatedRecommendationCard = ({
+  recommendation,
+  isSelected,
+  onClick,
   index,
-  isTopMatch 
-}: { 
+  isTopMatch
+}: {
   recommendation: AssignmentRecommendation;
   isSelected: boolean;
   onClick: () => void;
@@ -1204,7 +1449,7 @@ const AnimatedRecommendationCard = ({
 }) => {
   let colors;
   let matchIcon = null;
-  
+
   if (recommendation.perfectMatch) {
     colors = { bg: '#f0fdf4', border: '#047857', accent: '#047857', glow: '0 14px 34px rgba(4, 120, 87, 0.18)' };
     matchIcon = <Crown size={16} color="#064E3B" />;
@@ -1217,179 +1462,179 @@ const AnimatedRecommendationCard = ({
   }
 
   return (
-      <Card 
-        sx={{ 
-          borderRadius: '12px',
-          bgcolor: colors.bg,
-          border: `2px solid ${isSelected ? colors.accent : colors.border}`,
+    <Card
+      sx={{
+        borderRadius: '12px',
+        bgcolor: colors.bg,
+        border: `2px solid ${isSelected ? colors.accent : colors.border}`,
+        width: '100%',
+        cursor: 'pointer',
+        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+        transform: isSelected ? 'translateY(-2px)' : 'none',
+        animation: isTopMatch && !isSelected ? `${pulseGlow} 2s infinite` : 'none',
+        position: 'relative',
+        overflow: 'hidden',
+        '&:hover': {
+          transform: 'translateY(-3px)',
+          boxShadow: colors.glow,
+          borderColor: colors.accent
+        },
+        '&::before': isTopMatch ? {
+          content: '""',
+          position: 'absolute',
+          top: 0,
+          left: '-100%',
           width: '100%',
-          cursor: 'pointer',
-          transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-          transform: isSelected ? 'translateY(-2px)' : 'none',
-          animation: isTopMatch && !isSelected ? `${pulseGlow} 2s infinite` : 'none',
-          position: 'relative',
-          overflow: 'hidden',
-          '&:hover': { 
-            transform: 'translateY(-3px)',
-            boxShadow: colors.glow,
-            borderColor: colors.accent
-          },
-          '&::before': isTopMatch ? {
-            content: '""',
+          height: '100%',
+          background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent)',
+          animation: `${shimmer} 2s infinite`,
+        } : {}
+      }}
+      onClick={onClick}
+    >
+      {isTopMatch && (
+        <Box
+          sx={{
             position: 'absolute',
-            top: 0,
-            left: '-100%',
-            width: '100%',
-            height: '100%',
-            background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent)',
-            animation: `${shimmer} 2s infinite`,
-          } : {}
-        }}
-        onClick={onClick}
-      >
-        {isTopMatch && (
-          <Box 
-            sx={{ 
-              position: 'absolute',
-              top: -10,
-              right: -10,
-              background: 'linear-gradient(135deg, #064E3B, #059669)',
-              color: 'white',
-              borderRadius: '30px',
-              px: 2,
-              py: 0.5,
-              fontSize: '0.7rem',
-              fontWeight: 700,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 0.5,
-              zIndex: 2,
-              boxShadow: '0 4px 12px rgba(6, 78, 59, 0.3)',
-              animation: `${bounceIn} 0.5s ease-out`
-            }}
-          >
-            <Zap size={12} />
-            TOP MATCH
-          </Box>
-        )}
-        
-        <CardContent sx={{ p: 3 }}>
-          <Box display="flex" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={2}>
-            <Box display="flex" alignItems="center" gap={2}>
-              <Avatar sx={{ 
-                width: 56, 
-                height: 56, 
-                bgcolor: colors.accent,
-                background: isTopMatch ? 'linear-gradient(135deg, #064E3B, #059669)' : colors.accent,
-                boxShadow: isTopMatch ? '0 4px 15px rgba(6, 78, 59, 0.4)' : 'none',
-                transition: 'all 0.3s ease'
-              }}>
-                {isTopMatch ? <Crown size={28} /> : recommendation.officerName.charAt(0).toUpperCase()}
-              </Avatar>
-              <Box>
-                <Typography variant="h6" fontWeight="700" display="flex" alignItems="center" gap={1}>
-                  {recommendation.officerName}
-                  {isTopMatch && (
-                    <Tooltip title="Best match based on experience in this exact location">
-                      <Box sx={{ animation: `${starPulse} 1.5s infinite` }}>
-                        <Star size={16} color="#f59e0b" />
-                      </Box>
-                    </Tooltip>
-                  )}
-                </Typography>
-                <Box display="flex" gap={1} mt={0.5} flexWrap="wrap">
-                  <Chip size="small" label={recommendation.specialization} icon={<Briefcase size={12} />} sx={{ height: 24, fontSize: '0.7rem' }} />
-                  <Chip size="small" label={`${recommendation.currentLoad} active request(s)`} icon={<Activity size={12} />} sx={{ height: 24, fontSize: '0.7rem' }} />
-                  <Chip 
-                    size="small" 
-                    label={recommendation.matchLabel} 
-                    icon={matchIcon || undefined}
-                    sx={{ 
-                      height: 24, 
-                      fontSize: '0.7rem',
-                      bgcolor: recommendation.perfectMatch ? '#04785720' : 
-                               recommendation.sameSubCityCount > 0 ? '#05966920' : '#e2e8f0',
-                      color: recommendation.perfectMatch ? '#064E3B' : 
-                             recommendation.sameSubCityCount > 0 ? '#059669' : '#64748b',
-                      fontWeight: 600
-                    }} 
-                  />
-                </Box>
-              </Box>
-            </Box>
-            
-            <Box sx={{ position: 'relative', display: 'inline-flex' }}>
-              <Box sx={{ position: 'relative', width: 80, height: 80 }}>
-                <svg width={80} height={80}>
-                  <circle cx={40} cy={40} r={32} fill="none" stroke="#e2e8f0" strokeWidth="5" />
-                  <circle 
-                    cx={40} cy={40} r={32} fill="none" 
-                    stroke={colors.accent} 
-                    strokeWidth="5" 
-                    strokeDasharray={2 * Math.PI * 32} 
-                    strokeDashoffset={2 * Math.PI * 32 * (1 - recommendation.matchScore / 100)} 
-                    strokeLinecap="round" 
-                    style={{ 
-                      transition: 'stroke-dashoffset 1s ease-out', 
-                      transform: 'rotate(-90deg)', 
-                      transformOrigin: '50% 50%' 
-                    }} 
-                  />
-                </svg>
-                <Box sx={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', textAlign: 'center' }}>
-                  <Typography variant="h4" fontWeight="800" sx={{ color: colors.accent, lineHeight: 1 }}>{recommendation.matchScore}</Typography>
-                  <Typography variant="caption" sx={{ color: '#64748b', fontSize: '0.6rem' }}>MATCH</Typography>
-                </Box>
-              </Box>
-            </Box>
-          </Box>
-          
-          <Box sx={{ mt: 2.5 }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-              <Typography variant="caption" fontWeight="600">Experience Score</Typography>
-              <Typography variant="caption" fontWeight="800" sx={{ color: colors.accent }}>{recommendation.matchScore}%</Typography>
-            </Box>
-            <Box sx={{ width: '100%', bgcolor: '#e2e8f0', borderRadius: '10px', height: 8, overflow: 'hidden' }}>
-              <Box 
-                sx={{ 
-                  width: `${recommendation.matchScore}%`, 
-                  bgcolor: colors.accent, 
-                  borderRadius: '10px', 
-                  height: 8, 
-                  transition: 'width 1s ease-out',
-                  background: recommendation.perfectMatch ? 'linear-gradient(90deg, #064E3B, #059669)' : colors.accent
-                }} 
-              />
-            </Box>
-          </Box>
-          
-          <Box sx={{ mt: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Box display="flex" alignItems="flex-start" gap={0.75}>
-              {recommendation.perfectMatch ? <Trophy size={14} color="#047857" /> : recommendation.sameSubCity ? <MapPin size={14} color="#059669" /> : <Compass size={14} color="#64748b" />}
-              <Typography variant="caption" fontWeight={recommendation.perfectMatch || recommendation.sameSubCity ? 700 : 500} sx={{ color: recommendation.perfectMatch ? '#047857' : recommendation.sameSubCity ? '#059669' : '#64748b' }}>
-                {recommendation.matchReason}
+            top: -10,
+            right: -10,
+            background: 'linear-gradient(135deg, #064E3B, #059669)',
+            color: 'white',
+            borderRadius: '30px',
+            px: 2,
+            py: 0.5,
+            fontSize: '0.7rem',
+            fontWeight: 700,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 0.5,
+            zIndex: 2,
+            boxShadow: '0 4px 12px rgba(6, 78, 59, 0.3)',
+            animation: `${bounceIn} 0.5s ease-out`
+          }}
+        >
+          <Zap size={12} />
+          TOP MATCH
+        </Box>
+      )}
+
+      <CardContent sx={{ p: 3 }}>
+        <Box display="flex" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={2}>
+          <Box display="flex" alignItems="center" gap={2}>
+            <Avatar sx={{
+              width: 56,
+              height: 56,
+              bgcolor: colors.accent,
+              background: isTopMatch ? 'linear-gradient(135deg, #064E3B, #059669)' : colors.accent,
+              boxShadow: isTopMatch ? '0 4px 15px rgba(6, 78, 59, 0.4)' : 'none',
+              transition: 'all 0.3s ease'
+            }}>
+              {isTopMatch ? <Crown size={28} /> : recommendation.officerName.charAt(0).toUpperCase()}
+            </Avatar>
+            <Box>
+              <Typography variant="h6" fontWeight="700" display="flex" alignItems="center" gap={1}>
+                {recommendation.officerName}
+                {isTopMatch && (
+                  <Tooltip title="Best match based on experience in this exact location">
+                    <Box sx={{ animation: `${starPulse} 1.5s infinite` }}>
+                      <Star size={16} color="#f59e0b" />
+                    </Box>
+                  </Tooltip>
+                )}
               </Typography>
-            </Box>
-            {recommendation.perfectMatch && (
-              <Tooltip title="Perfect match: active request exists in this same sub-city and kebele">
-                <Box display="flex" alignItems="center" gap={0.5}>
-                  <Medal size={16} color="#064E3B" />
-                  <Typography variant="caption" fontWeight="800" sx={{ color: '#064E3B' }}>Perfect</Typography>
-                </Box>
-              </Tooltip>
-            )}
-          </Box>
-          
-          {isSelected && (
-            <Zoom in timeout={200}>
-              <Box sx={{ mt: 2, pt: 1.5, display: 'flex', alignItems: 'center', gap: 0.75, color: colors.accent, borderTop: `1px solid ${colors.accent}30` }}>
-                <CheckCircle size={14} />
-                <Typography variant="caption" fontWeight="700">✓ Selected for assignment</Typography>
+              <Box display="flex" gap={1} mt={0.5} flexWrap="wrap">
+                <Chip size="small" label={recommendation.specialization} icon={<Briefcase size={12} />} sx={{ height: 24, fontSize: '0.7rem' }} />
+                <Chip size="small" label={`${recommendation.currentLoad} active request(s)`} icon={<Activity size={12} />} sx={{ height: 24, fontSize: '0.7rem' }} />
+                <Chip
+                  size="small"
+                  label={recommendation.matchLabel}
+                  icon={matchIcon || undefined}
+                  sx={{
+                    height: 24,
+                    fontSize: '0.7rem',
+                    bgcolor: recommendation.perfectMatch ? '#04785720' :
+                      recommendation.sameSubCityCount > 0 ? '#05966920' : '#e2e8f0',
+                    color: recommendation.perfectMatch ? '#064E3B' :
+                      recommendation.sameSubCityCount > 0 ? '#059669' : '#64748b',
+                    fontWeight: 600
+                  }}
+                />
               </Box>
-            </Zoom>
+            </Box>
+          </Box>
+
+          <Box sx={{ position: 'relative', display: 'inline-flex' }}>
+            <Box sx={{ position: 'relative', width: 80, height: 80 }}>
+              <svg width={80} height={80}>
+                <circle cx={40} cy={40} r={32} fill="none" stroke="#e2e8f0" strokeWidth="5" />
+                <circle
+                  cx={40} cy={40} r={32} fill="none"
+                  stroke={colors.accent}
+                  strokeWidth="5"
+                  strokeDasharray={2 * Math.PI * 32}
+                  strokeDashoffset={2 * Math.PI * 32 * (1 - recommendation.matchScore / 100)}
+                  strokeLinecap="round"
+                  style={{
+                    transition: 'stroke-dashoffset 1s ease-out',
+                    transform: 'rotate(-90deg)',
+                    transformOrigin: '50% 50%'
+                  }}
+                />
+              </svg>
+              <Box sx={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', textAlign: 'center' }}>
+                <Typography variant="h4" fontWeight="800" sx={{ color: colors.accent, lineHeight: 1 }}>{recommendation.matchScore}</Typography>
+                <Typography variant="caption" sx={{ color: '#64748b', fontSize: '0.6rem' }}>MATCH</Typography>
+              </Box>
+            </Box>
+          </Box>
+        </Box>
+
+        <Box sx={{ mt: 2.5 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+            <Typography variant="caption" fontWeight="600">Experience Score</Typography>
+            <Typography variant="caption" fontWeight="800" sx={{ color: colors.accent }}>{recommendation.matchScore}%</Typography>
+          </Box>
+          <Box sx={{ width: '100%', bgcolor: '#e2e8f0', borderRadius: '10px', height: 8, overflow: 'hidden' }}>
+            <Box
+              sx={{
+                width: `${recommendation.matchScore}%`,
+                bgcolor: colors.accent,
+                borderRadius: '10px',
+                height: 8,
+                transition: 'width 1s ease-out',
+                background: recommendation.perfectMatch ? 'linear-gradient(90deg, #064E3B, #059669)' : colors.accent
+              }}
+            />
+          </Box>
+        </Box>
+
+        <Box sx={{ mt: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Box display="flex" alignItems="flex-start" gap={0.75}>
+            {recommendation.perfectMatch ? <Trophy size={14} color="#047857" /> : recommendation.sameSubCity ? <MapPin size={14} color="#059669" /> : <Compass size={14} color="#64748b" />}
+            <Typography variant="caption" fontWeight={recommendation.perfectMatch || recommendation.sameSubCity ? 700 : 500} sx={{ color: recommendation.perfectMatch ? '#047857' : recommendation.sameSubCity ? '#059669' : '#64748b' }}>
+              {recommendation.matchReason}
+            </Typography>
+          </Box>
+          {recommendation.perfectMatch && (
+            <Tooltip title="Perfect match: active request exists in this same sub-city and kebele">
+              <Box display="flex" alignItems="center" gap={0.5}>
+                <Medal size={16} color="#064E3B" />
+                <Typography variant="caption" fontWeight="800" sx={{ color: '#064E3B' }}>Perfect</Typography>
+              </Box>
+            </Tooltip>
           )}
-        </CardContent>
-      </Card>
+        </Box>
+
+        {isSelected && (
+          <Zoom in timeout={200}>
+            <Box sx={{ mt: 2, pt: 1.5, display: 'flex', alignItems: 'center', gap: 0.75, color: colors.accent, borderTop: `1px solid ${colors.accent}30` }}>
+              <CheckCircle size={14} />
+              <Typography variant="caption" fontWeight="700">✓ Selected for assignment</Typography>
+            </Box>
+          </Zoom>
+        )}
+      </CardContent>
+    </Card>
   );
 };
 
@@ -1399,7 +1644,7 @@ const AnimatedRecommendationCard = ({
 
 export default function RequestsPage() {
   const { user, notify } = useAuthStore();
-  const { hasPermission, canCreateRequest, canEditRequest, canApproveRequest, canManagerApprove, canRejectRequest, canManagerReject, canAssignRequest, canManageWorkload, canEstimateRequest, canEditEstimation } = usePermissions();
+  const { hasPermission, canCreateRequest, canEditRequest, canApproveRequest, canManagerApprove, canRejectRequest, canManagerReject, canAssignRequest, canManageWorkload, canEstimateRequest, canEditEstimation, canEngineerReject } = usePermissions();
   const router = useRouter();
 
   const [data, setData] = useState<EstimationRequest[]>([]);
@@ -1441,7 +1686,7 @@ export default function RequestsPage() {
     try {
       setLoading(true);
       const result = await api.get<EstimationRequest[]>('/EstimationRequests', { silent: true });
-      
+
       const requestsWithDetails = await Promise.all(
         (result || []).map(async (request) => {
           try {
@@ -1452,11 +1697,11 @@ export default function RequestsPage() {
           }
         })
       );
-      
+
       setData(requestsWithDetails || []);
       const pending = (requestsWithDetails || []).filter(r => r.status === 2 && !r.assignedEngineerId);
       setPendingRequests(pending);
-      
+
       return requestsWithDetails || [];
     } catch (error: unknown) {
       console.error('[FetchData Error]', getErrorMessage(error));
@@ -1469,10 +1714,10 @@ export default function RequestsPage() {
   const fetchOfficers = useCallback(async () => {
     try {
       const result = await api.get<unknown>('/UserManagement/engineering-officers', { silent: true });
-      
+
       let officersArray: OfficerApiRecord[] = [];
       const resultObj = result as Record<string, unknown>;
-      
+
       if (result && Array.isArray(result)) {
         officersArray = result as OfficerApiRecord[];
       } else if (result && typeof result === 'object' && 'data' in result && Array.isArray(resultObj.data)) {
@@ -1484,23 +1729,23 @@ export default function RequestsPage() {
       } else if (result && typeof result === 'object' && 'result' in result && Array.isArray(resultObj.result)) {
         officersArray = resultObj.result as OfficerApiRecord[];
       }
-      
+
       const allRequests = await fetchData();
-      
+
       const mappedOfficers = officersArray.map((officer, idx: number) => {
         const firstName = officer.firstName || officer.FirstName || '';
         const lastName = officer.lastName || officer.LastName || '';
         const fullName = `${firstName} ${lastName}`.trim();
-        
-        const assignedRequests = allRequests.filter(r => 
-          r.assignedEngineerId === (officer.id?.toString()) && 
+
+        const assignedRequests = allRequests.filter(r =>
+          r.assignedEngineerId === (officer.id?.toString()) &&
           (r.status === 2 || r.status === 3)
         );
-        
-        const previousRequests = allRequests.filter(r => 
+
+        const previousRequests = allRequests.filter(r =>
           r.assignedEngineerId === (officer.id?.toString())
         );
-        
+
         return {
           id: officer.id?.toString() || `off-${idx}`,
           name: fullName || officer.email || 'Engineer',
@@ -1511,13 +1756,13 @@ export default function RequestsPage() {
           previousRequests: previousRequests
         };
       }).filter(o => o.id && o.id !== '');
-      
+
       if (mappedOfficers.length > 0) {
         setEngOfficers(mappedOfficers);
       } else {
         setEngOfficers([]);
       }
-      
+
     } catch (error: unknown) {
       console.error('Error fetching officers:', getErrorMessage(error));
       setEngOfficers([]);
@@ -1535,19 +1780,19 @@ export default function RequestsPage() {
   // =================================================================
   // Enhanced Assignment Functions with SubCity/Kebele matching (PERFECT MATCH = Both)
   // =================================================================
-  
+
   const getActiveRequestsCountBySubCity = useCallback((officerId: string, subCity: string): number => {
     const officer = engOfficers.find(o => o.id === officerId);
     if (!officer || !officer.assignedRequests) return 0;
-    return officer.assignedRequests.filter(req => 
+    return officer.assignedRequests.filter(req =>
       req.subCity?.toLowerCase() === subCity?.toLowerCase()
     ).length;
   }, [engOfficers]);
-  
+
   const getActiveRequestsCountByKebele = useCallback((officerId: string, kebele: string, subCity: string): number => {
     const officer = engOfficers.find(o => o.id === officerId);
     if (!officer || !officer.assignedRequests) return 0;
-    return officer.assignedRequests.filter(req => 
+    return officer.assignedRequests.filter(req =>
       req.kebele?.toLowerCase() === kebele?.toLowerCase() &&
       req.subCity?.toLowerCase() === subCity?.toLowerCase()
     ).length;
@@ -1558,17 +1803,17 @@ export default function RequestsPage() {
 
   const getRecommendations = useCallback((request: EstimationRequest): AssignmentRecommendation[] => {
     const pendingCount = data.filter(r => r.status === 2 && !r.assignedEngineerId).length;
-    
+
     return engOfficers.map(officer => {
       let matchScore = 0;
       const sameSubCityCount = getActiveRequestsCountBySubCity(officer.id, request.subCity);
       const sameKebeleCount = getActiveRequestsCountByKebele(officer.id, request.kebele, request.subCity);
-      
+
       const perfectMatch = sameSubCityCount > 0 && sameKebeleCount > 0;
       const goodMatch = sameSubCityCount > 0 && sameKebeleCount === 0;
       let matchLabel = 'Available';
       let matchReason = 'No active request in this sub-city or kebele.';
-      
+
       if (perfectMatch) {
         matchScore = 85;
         matchScore += Math.min(12, sameKebeleCount * 4);
@@ -1588,17 +1833,17 @@ export default function RequestsPage() {
           ? `No active area match, but the building type aligns with ${officer.specialization || 'their specialization'}.`
           : 'No active area match. Consider workload before assigning.';
       }
-      
+
       const maxLoad = Math.max(...engOfficers.map(o => o.currentLoad), 1);
       const workloadFactor = Math.max(0, 16 - (officer.currentLoad / maxLoad) * 16);
       matchScore += workloadFactor;
-      
+
       const pendingFactor = Math.max(0, 6 - (pendingCount / Math.max(engOfficers.length, 1)) * 4);
       matchScore += pendingFactor;
-      
+
       // Ensure score doesn't exceed 100
       matchScore = Math.min(100, Math.round(matchScore));
-      
+
       return {
         officerId: officer.id,
         officerName: officer.name,
@@ -1632,10 +1877,10 @@ export default function RequestsPage() {
       }
       const updatedData = await fetchData();
       await fetchOfficers();
-      
+
       const updatedOfficers = engOfficers.map(officer => {
         if (officer.id === officerId) {
-          const newlyAssigned = updatedData.filter(r => 
+          const newlyAssigned = updatedData.filter(r =>
             requestIds.includes(r.id) && r.assignedEngineerId === officerId
           );
           const updatedPrevious = [...(officer.previousRequests || []), ...newlyAssigned];
@@ -1649,12 +1894,12 @@ export default function RequestsPage() {
         return officer;
       });
       setEngOfficers(updatedOfficers);
-      
+
       if (manageRequestsForOfficer && manageRequestsForOfficer.id === officerId) {
         const updatedAssignments = getRequestsByOfficer(officerId);
         setManageRequestsForOfficer({ ...manageRequestsForOfficer, assignedRequests: updatedAssignments });
       }
-      
+
       notify(`Successfully assigned ${requestIds.length} request(s)`, 'success');
       return true;
     } catch (error: unknown) {
@@ -1668,7 +1913,7 @@ export default function RequestsPage() {
 
   const removeAssignment = useCallback(async (requestId: number) => {
     if (!confirm('Remove this assignment? The request will be available for reassignment.')) return;
-    
+
     try {
       setAssigning(true);
       try {
@@ -1676,17 +1921,17 @@ export default function RequestsPage() {
       } catch {
         await api.delete(`/EstimationRequests/${requestId}/assignment`);
       }
-      
+
       const updatedData = await fetchData();
       await fetchOfficers();
-      
+
       if (manageRequestsForOfficer) {
-        const updatedAssignments = updatedData.filter(r => 
-          r.assignedEngineerId === manageRequestsForOfficer.id && 
+        const updatedAssignments = updatedData.filter(r =>
+          r.assignedEngineerId === manageRequestsForOfficer.id &&
           (r.status === 2 || r.status === 3)
         );
         setManageRequestsForOfficer({ ...manageRequestsForOfficer, assignedRequests: updatedAssignments });
-        
+
         const updatedOfficers = engOfficers.map(officer => {
           if (officer.id === manageRequestsForOfficer.id) {
             return {
@@ -1699,7 +1944,7 @@ export default function RequestsPage() {
         });
         setEngOfficers(updatedOfficers);
       }
-      
+
       notify('Assignment removed successfully', 'success');
       return true;
     } catch (error: unknown) {
@@ -1716,43 +1961,43 @@ export default function RequestsPage() {
       notify('Please select an engineer', 'warning');
       return;
     }
-    
+
     setAssigning(true);
     try {
       const currentRequest = data.find(r => r.id === requestId);
       const oldOfficerId = currentRequest?.assignedEngineerId;
-      
+
       try {
         await api.post(`/EstimationRequests/${requestId}/unassign`, {});
       } catch (err) {
         console.log('No existing assignment or removal failed, proceeding with assign...');
       }
-      
+
       await api.post(`/EstimationRequests/${requestId}/assign`, { officerId: newOfficerId });
-      
+
       const updatedData = await fetchData();
       await fetchOfficers();
-      
+
       if (manageRequestsForOfficer && oldOfficerId === manageRequestsForOfficer.id) {
-        const oldOfficerAssignments = updatedData.filter(r => 
-          r.assignedEngineerId === oldOfficerId && 
+        const oldOfficerAssignments = updatedData.filter(r =>
+          r.assignedEngineerId === oldOfficerId &&
           (r.status === 2 || r.status === 3)
         );
         setManageRequestsForOfficer({ ...manageRequestsForOfficer, assignedRequests: oldOfficerAssignments });
       }
-      
+
       if (manageRequestsForOfficer && newOfficerId === manageRequestsForOfficer.id) {
-        const newOfficerAssignments = updatedData.filter(r => 
-          r.assignedEngineerId === newOfficerId && 
+        const newOfficerAssignments = updatedData.filter(r =>
+          r.assignedEngineerId === newOfficerId &&
           (r.status === 2 || r.status === 3)
         );
         setManageRequestsForOfficer({ ...manageRequestsForOfficer, assignedRequests: newOfficerAssignments });
       }
-      
+
       const updatedOfficers = await Promise.all(engOfficers.map(async (officer) => {
         if (officer.id === oldOfficerId || officer.id === newOfficerId) {
-          const assignments = updatedData.filter(r => 
-            r.assignedEngineerId === officer.id && 
+          const assignments = updatedData.filter(r =>
+            r.assignedEngineerId === officer.id &&
             (r.status === 2 || r.status === 3)
           );
           return {
@@ -1764,7 +2009,7 @@ export default function RequestsPage() {
         return officer;
       }));
       setEngOfficers(updatedOfficers);
-      
+
       notify(`Request #${requestId} reassigned successfully`, 'success');
       setReassignDialogOpen(false);
       setRequestToReassign(null);
@@ -1793,11 +2038,11 @@ export default function RequestsPage() {
     setIsCheckingLHU(true);
     try {
       const existing = await api.get<EstimationRequest[]>('/EstimationRequests', { silent: true });
-      const duplicate = existing.some(r => 
-        r.lhuNo?.toLowerCase() === lhuNo.toLowerCase() && 
+      const duplicate = existing.some(r =>
+        r.lhuNo?.toLowerCase() === lhuNo.toLowerCase() &&
         (currentRequestId ? r.id !== currentRequestId : true)
       );
-      setLhuError(duplicate ? 'LHU number already exists. Please enter a unique LHU number.' : null);
+      setLhuError(duplicate ? 'LHC number already exists. Please enter a unique LHC number.' : null);
       return !duplicate;
     } catch { return true; }
     finally { setIsCheckingLHU(false); }
@@ -1809,12 +2054,12 @@ export default function RequestsPage() {
 
   const handleView = (row: EstimationRequest) => { setSelectedRow(row); setViewDetailsDialogOpen(true); handleMenuClose(); };
   const handleEstimate = (row: EstimationRequest, isEdit: boolean = false) => { setSelectedRow(row); setIsEditMode(isEdit); setExistingReportData(row.report || null); setEstimationDialogOpen(true); handleMenuClose(); };
-  const handleSmartAssign = async (row: EstimationRequest) => { 
-    setSelectedRow(row); 
+  const handleSmartAssign = async (row: EstimationRequest) => {
+    setSelectedRow(row);
     setRecommendations(getRecommendations(row));
     setSelectedOfficerId('');
-    setWorkflowAction('manager_assign'); 
-    handleMenuClose(); 
+    setWorkflowAction('manager_assign');
+    handleMenuClose();
   };
   const handleMenuOpen = (e: React.MouseEvent<HTMLElement>, row: EstimationRequest) => { setAnchorEl(e.currentTarget); setSelectedRow(row); };
   const handleMenuClose = () => { setAnchorEl(null); };
@@ -1981,13 +2226,13 @@ export default function RequestsPage() {
       setSubmitError(`Please upload all required documents: ${missingDocuments.join(', ')}.`);
       return;
     }
-    
+
     const isUnique = await checkLHU(formik.values.lhuNo, isResendMode ? resendRequestId ?? undefined : undefined);
     if (!isUnique) {
-      setSubmitError('LHU number already exists. Please enter a unique LHU number.');
+      setSubmitError('LHC number already exists. Please enter a unique LHC number.');
       return;
     }
-    
+
     try {
       if (isRequestEditMode && editRequestId) {
         setSubmitting(true);
@@ -2073,7 +2318,7 @@ export default function RequestsPage() {
       const errorData = getErrorData(error);
       console.error('Submit error:', errorData);
       if (errorData?.message?.toLowerCase().includes('lhu') || (typeof errorData?.errors === 'object' && errorData.errors !== null && 'lhuNo' in errorData.errors)) {
-        setSubmitError('LHU number already exists. Please enter a unique LHU number.');
+        setSubmitError('LHC number already exists. Please enter a unique LHC number.');
       } else {
         setSubmitError(errorData?.message || 'Submission failed');
       }
@@ -2091,9 +2336,9 @@ export default function RequestsPage() {
     ownerName: Yup.string().required('Required').min(2),
     lhuNo: Yup.string().required('Required'),
     region: Yup.string().required('Required'),
-    cityId: Yup.string().required('Required'),
-    subCityId: Yup.string().required('Required'),
-    kebeleName: Yup.string().required('Required'),
+    city: Yup.string().required('Required'),
+    subCity: Yup.string().required('Required'),
+    kebele: Yup.string().required('Required'),
     plotArea: Yup.number().required('Required').positive(),
     buildingType: Yup.string().required('Required'),
     purpose: Yup.string().required('Required'),
@@ -2121,7 +2366,10 @@ export default function RequestsPage() {
   handleCloseForm = () => { setOpenDialog(false); formik.resetForm(); setAttachments([]); setSubmitError(null); setIsResendMode(false); setResendRequestId(null); setIsRequestEditMode(false); setEditRequestId(null); };
 
   const getMissingDocumentTypes = () => {
-    const required = [...requiredDocumentTypes];
+    const required = ['Estimation Fee'];
+    if (formik.values.buildingType !== 'Condominium') {
+      required.push('Land LHC', 'Floor Plan');
+    }
     if (formik.values.purpose === 'Project Finance') {
       required.push('Construction Permit');
     }
@@ -2137,29 +2385,34 @@ export default function RequestsPage() {
         const currentDate = new Date().toISOString();
 
         if (workflowAction === 'checker_approve') {
-          await api.post(`/EstimationRequests/${selectedRow.id}/checker-approve`, { 
-            checkerApprovalDate: currentDate, 
-            checkerDescription: values.description 
+          await api.post(`/EstimationRequests/${selectedRow.id}/checker-approve`, {
+            checkerApprovalDate: currentDate,
+            checkerDescription: values.description
           });
         } else if (workflowAction === 'checker_reject') {
-          await api.post(`/EstimationRequests/${selectedRow.id}/checker-reject`, { 
-            checkerRejectionDate: currentDate, 
-            checkerReason: values.reason 
+          await api.post(`/EstimationRequests/${selectedRow.id}/checker-reject`, {
+            checkerRejectionDate: currentDate,
+            checkerReason: values.reason
           });
         } else if (workflowAction === 'manager_approve') {
-          await api.post(`/EstimationRequests/${selectedRow.id}/manager-approve`, { 
-            managerApprovalDate: currentDate, 
-            managerDescription: values.description 
+          await api.post(`/EstimationRequests/${selectedRow.id}/manager-approve`, {
+            managerApprovalDate: currentDate,
+            managerDescription: values.description
           });
         } else if (workflowAction === 'manager_reject') {
-          await api.post(`/EstimationRequests/${selectedRow.id}/manager-reject`, { 
-            managerRejectionDate: currentDate, 
-            managerReason: values.reason 
+          await api.post(`/EstimationRequests/${selectedRow.id}/manager-reject`, {
+            managerRejectionDate: currentDate,
+            managerReason: values.reason
+          });
+        } else if (workflowAction === 'engineer_reject') {
+          await api.post(`/EstimationRequests/${selectedRow.id}/engineer-reject`, {
+            engineerRejectionDate: currentDate,
+            engineerReason: values.reason
           });
         } else if (workflowAction === 'manager_assign' && values.officerId) {
           await batchAssign(values.officerId, [selectedRow.id]);
         }
-        
+
         setWorkflowAction(null);
         workflowFormik.resetForm();
         const updatedRequests = await fetchData();
@@ -2214,6 +2467,7 @@ export default function RequestsPage() {
     }
     if (canEstimateRequest(selectedRow.status, selectedRow.assignedEngineerId === user?.id, !!selectedRow.report)) items.push(<MenuItem key="estimate" onClick={() => handleEstimate(selectedRow, false)}><ListItemIcon><FileText size={18} /></ListItemIcon><ListItemText primary="Send Estimation" /></MenuItem>);
     if (canEditEstimation(selectedRow.status, selectedRow.assignedEngineerId === user?.id, !!selectedRow.report)) items.push(<MenuItem key="re-estimate" onClick={() => handleEstimate(selectedRow, true)}><ListItemIcon><Edit size={18} /></ListItemIcon><ListItemText primary="Re-Estimate" /></MenuItem>);
+    if (canEngineerReject(selectedRow.status, selectedRow.assignedEngineerId === user?.id)) items.push(<MenuItem key="eng-reject" onClick={() => { setWorkflowAction('engineer_reject'); handleMenuClose(); }}><ListItemIcon><XCircle size={18} color="#dc2626" /></ListItemIcon><ListItemText primary="Reject Assigned Request" /></MenuItem>);
     if (selectedRow.report) items.push(<MenuItem key="view-report" onClick={() => handleView(selectedRow)}><ListItemIcon><FileText size={18} /></ListItemIcon><ListItemText primary="View Submitted Report" /></MenuItem>);
     return items;
   };
@@ -2222,10 +2476,10 @@ export default function RequestsPage() {
   // Effects
   // =================================================================
 
-  useEffect(() => { 
-    setMounted(true); 
-    fetchData(); 
-    if (canManageWorkload() || canAssignRequest(2, false)) fetchOfficers(); 
+  useEffect(() => {
+    setMounted(true);
+    fetchData();
+    if (canManageWorkload() || canAssignRequest(2, false)) fetchOfficers();
   }, []);
 
   // =================================================================
@@ -2250,11 +2504,11 @@ export default function RequestsPage() {
         )}
       </Box>
 
-      <RequestsTable 
-        data={data} 
-        loading={loading} 
-        currentUserId={user?.id || ''} 
-        currentBranchId={user?.branchId} 
+      <RequestsTable
+        data={data}
+        loading={loading}
+        currentUserId={user?.id || ''}
+        currentBranchId={user?.branchId}
         onMenuOpen={handleMenuOpen}
         onViewDetails={handleView}
       />
@@ -2263,21 +2517,55 @@ export default function RequestsPage() {
         {getMenuItems()}
       </Menu>
 
+      {/* Engineer Reject Dialog */}
+      <Dialog open={workflowAction === 'engineer_reject'} onClose={() => { setWorkflowAction(null); workflowFormik.resetForm(); }} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: '16px' } }}>
+        <DialogTitle sx={{ fontWeight: 700, color: '#dc2626', display: 'flex', alignItems: 'center', gap: 1 }}>
+          <XCircle size={20} color="#dc2626" /> Reject Assigned Request #{selectedRow?.id}
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText sx={{ mb: 2 }}>
+            Please provide a reason for rejecting this assigned request. The Maker and Manager will be notified.
+          </DialogContentText>
+          <TextField
+            fullWidth
+            multiline
+            rows={4}
+            label="Rejection Reason"
+            value={workflowFormik.values.reason}
+            onChange={workflowFormik.handleChange}
+            name="reason"
+            required
+            sx={{ mt: 1 }}
+          />
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 3, gap: 1 }}>
+          <Button onClick={() => { setWorkflowAction(null); workflowFormik.resetForm(); }} variant="outlined" sx={{ borderRadius: '8px' }}>Cancel</Button>
+          <Button
+            onClick={() => workflowFormik.handleSubmit()}
+            variant="contained"
+            disabled={!workflowFormik.values.reason.trim() || loading}
+            sx={{ bgcolor: '#dc2626', '&:hover': { bgcolor: '#b91c1c' }, borderRadius: '8px' }}
+          >
+            {loading ? <CircularProgress size={20} color="inherit" /> : 'Confirm Rejection'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       {/* =================================================================
           SMART ASSIGNMENT DIALOG - ENHANCED WITH PERFECT MATCH (SUB-CITY + KEBELE)
           WITH EYE-CATCHING ANIMATIONS
       ================================================================= */}
-      <Dialog 
-        open={workflowAction === 'manager_assign'} 
-        onClose={() => { setWorkflowAction(null); setRecommendations([]); setSelectedOfficerId(''); }} 
-        maxWidth="md" 
+      <Dialog
+        open={workflowAction === 'manager_assign'}
+        onClose={() => { setWorkflowAction(null); setRecommendations([]); setSelectedOfficerId(''); }}
+        maxWidth="md"
         fullWidth
         TransitionComponent={Zoom}
         PaperProps={{ sx: { borderRadius: '24px', overflow: 'hidden' } }}
       >
-        <Box sx={{ 
-          background: 'linear-gradient(135deg, #064E3B, #059669)', 
-          px: 3, 
+        <Box sx={{
+          background: 'linear-gradient(135deg, #064E3B, #059669)',
+          px: 3,
           py: 2.5,
           position: 'relative',
           overflow: 'hidden',
@@ -2303,14 +2591,14 @@ export default function RequestsPage() {
 
         <DialogContent sx={{ pt: 4, pb: 2, bgcolor: '#f8fafc' }}>
           <Box sx={{ display: 'flex', justifyContent: 'center', mb: 3 }}>
-            <Paper sx={{ 
-              px: 3, 
-              py: 1, 
-              borderRadius: '40px', 
-              bgcolor: 'white', 
-              boxShadow: '0 2px 8px rgba(0,0,0,0.05)', 
-              display: 'flex', 
-              alignItems: 'center', 
+            <Paper sx={{
+              px: 3,
+              py: 1,
+              borderRadius: '40px',
+              bgcolor: 'white',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+              display: 'flex',
+              alignItems: 'center',
               gap: 1.5,
               border: '1px solid #e2e8f0'
             }}>
@@ -2353,10 +2641,10 @@ export default function RequestsPage() {
 
           <FormControl fullWidth>
             <InputLabel>Select Engineer</InputLabel>
-            <Select 
-              value={selectedOfficerId} 
-              onChange={(e) => setSelectedOfficerId(e.target.value)} 
-              label="Select Engineer" 
+            <Select
+              value={selectedOfficerId}
+              onChange={(e) => setSelectedOfficerId(e.target.value)}
+              label="Select Engineer"
               sx={{ borderRadius: '12px' }}
             >
               <MenuItem value=""><em>-- Select Engineer --</em></MenuItem>
@@ -2388,14 +2676,14 @@ export default function RequestsPage() {
             </Select>
           </FormControl>
         </DialogContent>
-        
+
         <DialogActions sx={{ p: 3, bgcolor: '#f8fafc', borderTop: '1px solid #e2e8f0', gap: 2 }}>
           <Button onClick={() => { setWorkflowAction(null); setRecommendations([]); }}>Cancel</Button>
-          <Button 
-            variant="contained" 
-            onClick={handleConfirmAssignment} 
-            disabled={!selectedOfficerId || assigning} 
-            sx={{ 
+          <Button
+            variant="contained"
+            onClick={handleConfirmAssignment}
+            disabled={!selectedOfficerId || assigning}
+            sx={{
               bgcolor: '#064E3B',
               '&:hover': { bgcolor: '#059669' },
               px: 4,
@@ -2410,10 +2698,10 @@ export default function RequestsPage() {
       {/* =================================================================
           MANAGE ENGINEER WORKLOAD DIALOG
       ================================================================= */}
-      <Dialog 
-        open={workflowAction === 'manager_manage'} 
-        onClose={() => { setWorkflowAction(null); setManageRequestsForOfficer(null); setTabValue(0); }} 
-        maxWidth="lg" 
+      <Dialog
+        open={workflowAction === 'manager_manage'}
+        onClose={() => { setWorkflowAction(null); setManageRequestsForOfficer(null); setTabValue(0); }}
+        maxWidth="lg"
         fullWidth
         PaperProps={{ sx: { borderRadius: '16px' } }}
       >
@@ -2443,7 +2731,7 @@ export default function RequestsPage() {
             <Tab label={`Assigned (${manageRequestsForOfficer?.currentLoad || 0})`} />
             <Tab label={`Available (${pendingRequests.length})`} />
           </Tabs>
-          
+
           {tabValue === 0 && (
             <Box>
               {(!manageRequestsForOfficer?.currentLoad || manageRequestsForOfficer.currentLoad === 0) ? (
@@ -2467,9 +2755,9 @@ export default function RequestsPage() {
                               <Button size="small" variant="outlined" color="error" startIcon={<Trash2 size={14} />} onClick={() => removeAssignment(req.id)} disabled={assigning}>
                                 Remove
                               </Button>
-                              <Button 
-                                size="small" 
-                                variant="contained" 
+                              <Button
+                                size="small"
+                                variant="contained"
                                 startIcon={<RefreshCw size={14} />}
                                 onClick={() => handleOpenReassignDialog(req)}
                                 sx={{ bgcolor: '#064E3B' }}
@@ -2486,7 +2774,7 @@ export default function RequestsPage() {
               )}
             </Box>
           )}
-          
+
           {tabValue === 1 && (
             <Box>
               {pendingRequests.length === 0 ? (
@@ -2499,9 +2787,9 @@ export default function RequestsPage() {
                         <CardContent>
                           <Typography variant="subtitle2" fontWeight="600">#{req.id} - {req.applicantName}</Typography>
                           <Typography variant="caption" sx={{ color: '#64748b', display: 'block' }}>{req.subCity}, Kebele {req.kebele} | {req.plotArea} m²</Typography>
-                          <Button 
-                            fullWidth 
-                            variant="contained" 
+                          <Button
+                            fullWidth
+                            variant="contained"
                             sx={{ mt: 2, bgcolor: '#064E3B' }}
                             onClick={() => batchAssign(manageRequestsForOfficer?.id || '', [req.id])}
                             disabled={assigning}
@@ -2517,7 +2805,7 @@ export default function RequestsPage() {
             </Box>
           )}
         </DialogContent>
-        
+
         <DialogActions sx={{ p: 3, bgcolor: '#f8fafc', borderTop: '1px solid #e2e8f0' }}>
           <Button onClick={() => { setWorkflowAction(null); setManageRequestsForOfficer(null); }}>Close</Button>
         </DialogActions>
@@ -2530,12 +2818,12 @@ export default function RequestsPage() {
         <DialogTitle sx={{ fontWeight: 700, color: '#064E3B' }}>Reassign Request #{requestToReassign?.id}</DialogTitle>
         <DialogContent>
           <Typography variant="body2" sx={{ mb: 2, color: '#64748b' }}>
-            <strong>Request Details:</strong><br/>
-            Applicant: {requestToReassign?.applicantName}<br/>
-            Location: {requestToReassign?.subCity}, Kebele {requestToReassign?.kebele}<br/>
-            LHU: {requestToReassign?.lhuNo}
+            <strong>Request Details:</strong><br />
+            Applicant: {requestToReassign?.applicantName}<br />
+            Location: {requestToReassign?.subCity}, Kebele {requestToReassign?.kebele}<br />
+            LHC: {requestToReassign?.lhuNo}
           </Typography>
-          
+
           <FormControl fullWidth sx={{ mb: 2 }}>
             <InputLabel>Select New Engineering Officer *</InputLabel>
             <Select
@@ -2570,20 +2858,20 @@ export default function RequestsPage() {
               })}
             </Select>
           </FormControl>
-          
+
           <Alert severity="info" sx={{ mt: 2 }}>
             This will remove the current assignment and assign the request to the selected officer.
           </Alert>
         </DialogContent>
         <DialogActions sx={{ p: 3, gap: 2 }}>
           <Button onClick={() => setReassignDialogOpen(false)}>Cancel</Button>
-          <Button 
+          <Button
             onClick={() => {
               if (requestToReassign && selectedNewOfficerId) {
                 handleReassignRequest(requestToReassign.id, selectedNewOfficerId);
               }
-            }} 
-            variant="contained" 
+            }}
+            variant="contained"
             disabled={!selectedNewOfficerId || assigning}
             sx={{ bgcolor: '#064E3B' }}
           >
@@ -2599,15 +2887,15 @@ export default function RequestsPage() {
         </DialogTitle>
         <form onSubmit={workflowFormik.handleSubmit}>
           <DialogContent>
-            <TextField 
-              fullWidth 
-              multiline 
-              rows={3} 
-              label={workflowAction?.includes('approve') ? 'Comments / Description *' : 'Reason for Rejection *'} 
-              name={workflowAction?.includes('approve') ? 'description' : 'reason'} 
-              value={workflowAction?.includes('approve') ? workflowFormik.values.description : workflowFormik.values.reason} 
-              onChange={workflowFormik.handleChange} 
-              required 
+            <TextField
+              fullWidth
+              multiline
+              rows={3}
+              label={workflowAction?.includes('approve') ? 'Comments / Description *' : 'Reason for Rejection *'}
+              name={workflowAction?.includes('approve') ? 'description' : 'reason'}
+              value={workflowAction?.includes('approve') ? workflowFormik.values.description : workflowFormik.values.reason}
+              onChange={workflowFormik.handleChange}
+              required
             />
           </DialogContent>
           <DialogActions sx={{ p: 2, gap: 1 }}>
@@ -2632,7 +2920,7 @@ export default function RequestsPage() {
               <Grid container spacing={3}>
                 <Grid item xs={12} md={4} sx={{ minWidth: 0 }}><TextField fullWidth label="Applicant Name" name="applicantName" value={formik.values.applicantName} onChange={formik.handleChange} error={formik.touched.applicantName && Boolean(formik.errors.applicantName)} helperText={formik.touched.applicantName && formik.errors.applicantName} required sx={requestInputSx} /></Grid>
                 <Grid item xs={12} md={4} sx={{ minWidth: 0 }}><TextField fullWidth label="Owner Name" name="ownerName" value={formik.values.ownerName} onChange={formik.handleChange} error={formik.touched.ownerName && Boolean(formik.errors.ownerName)} helperText={formik.touched.ownerName && formik.errors.ownerName} required sx={requestInputSx} /></Grid>
-                <Grid item xs={12} md={4} sx={{ minWidth: 0 }}><TextField fullWidth label="LHU Number" name="lhuNo" value={formik.values.lhuNo} onChange={async (e) => { formik.handleChange(e); await checkLHU(e.target.value); }} error={(formik.touched.lhuNo && Boolean(formik.errors.lhuNo)) || Boolean(lhuError)} helperText={(formik.touched.lhuNo && formik.errors.lhuNo) || lhuError} required sx={requestInputSx} InputProps={{ endAdornment: isCheckingLHU && <CircularProgress size={16} /> }} /></Grid>
+                <Grid item xs={12} md={4} sx={{ minWidth: 0 }}><TextField fullWidth label="LHC Number" name="lhuNo" value={formik.values.lhuNo} onChange={async (e) => { formik.handleChange(e); await checkLHU(e.target.value); }} error={(formik.touched.lhuNo && Boolean(formik.errors.lhuNo)) || Boolean(lhuError)} helperText={(formik.touched.lhuNo && formik.errors.lhuNo) || lhuError} required sx={requestInputSx} InputProps={{ endAdornment: isCheckingLHU && <CircularProgress size={16} /> }} /></Grid>
                 <Grid item xs={12} md={4} sx={{ minWidth: 0 }}><TextField fullWidth type="number" label="Plot Area (m²)" name="plotArea" value={formik.values.plotArea} onChange={formik.handleChange} error={formik.touched.plotArea && Boolean(formik.errors.plotArea)} helperText={formik.touched.plotArea && formik.errors.plotArea} required sx={requestInputSx} /></Grid>
               </Grid>
             </Paper>
@@ -2703,7 +2991,7 @@ export default function RequestsPage() {
                   <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', minWidth: 0, width: '100%' }}>
                     <FormControlLabel
                       control={<Checkbox name="billOfPenalty" checked={formik.values.billOfPenalty} onChange={formik.handleChange} />}
-                      label="Bill of Penalty"
+                      label="Bill of Quantity"
                     />
                   </Box>
 
@@ -2724,8 +3012,13 @@ export default function RequestsPage() {
               <Typography variant="subtitle2" fontWeight="700" sx={{ color: '#064E3B', mb: 2 }}>Supporting Documents</Typography>
               <Box display="flex" gap={1.5} flexWrap="wrap" mb={2}>
                 <Button component="label" variant="outlined" size="small" startIcon={uploading ? <CircularProgress size={14} /> : <Upload size={14} />} disabled={uploading}>Estimation Fee<input type="file" hidden onChange={(e) => uploadFile(e, 'Estimation Fee')} accept=".pdf,.jpg,.jpeg,.png" /></Button>
-                <Button component="label" variant="outlined" size="small" startIcon={uploading ? <CircularProgress size={14} /> : <Upload size={14} />} disabled={uploading}>Land Deed<input type="file" hidden onChange={(e) => uploadFile(e, 'Land Deed')} accept=".pdf,.jpg,.jpeg,.png" /></Button>
-                <Button component="label" variant="outlined" size="small" startIcon={uploading ? <CircularProgress size={14} /> : <Upload size={14} />} disabled={uploading}>Floor Plan<input type="file" hidden onChange={(e) => uploadFile(e, 'Floor Plan')} accept=".pdf,.jpg,.jpeg,.png" /></Button>
+                {formik.values.buildingType !== 'Condominium' && (
+                  <>
+                    <Button component="label" variant="outlined" size="small" startIcon={uploading ? <CircularProgress size={14} /> : <Upload size={14} />} disabled={uploading}>Land LHC<input type="file" hidden onChange={(e) => uploadFile(e, 'Land LHC')} accept=".pdf,.jpg,.jpeg,.png" /></Button>
+                    <Button component="label" variant="outlined" size="small" startIcon={uploading ? <CircularProgress size={14} /> : <Upload size={14} />} disabled={uploading}>Floor Plan<input type="file" hidden onChange={(e) => uploadFile(e, 'Floor Plan')} accept=".pdf,.jpg,.jpeg,.png" /></Button>
+                  </>
+                )}
+                <Button component="label" variant="outlined" size="small" startIcon={uploading ? <CircularProgress size={14} /> : <Upload size={14} />} disabled={uploading}>Other Document (Optional)<input type="file" hidden onChange={(e) => uploadFile(e, 'Other Document')} accept=".pdf,.jpg,.jpeg,.png" /></Button>
               </Box>
               {attachments.map((file, idx) => (
                 <Box key={idx} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', bgcolor: '#f8fafc', p: 1, mb: 1 }}>
@@ -2754,11 +3047,11 @@ export default function RequestsPage() {
           <Typography>Are you sure you want to submit this estimation request?</Typography>
           <Paper sx={{ mt: 2, p: 2, bgcolor: '#f8fafc' }}>
             <Typography variant="body2">
-              <strong>Applicant:</strong> {formik.values.applicantName}<br/>
-              <strong>Owner:</strong> {formik.values.ownerName}<br/>
-              <strong>LHU Number:</strong> {formik.values.lhuNo}<br/>
-              <strong>Location:</strong> {formik.values.subCity}, Kebele {formik.values.kebele}<br/>
-              <strong>Plot Area:</strong> {formik.values.plotArea} m²<br/>
+              <strong>Applicant:</strong> {formik.values.applicantName}<br />
+              <strong>Owner:</strong> {formik.values.ownerName}<br />
+              <strong>LHC Number:</strong> {formik.values.lhuNo}<br />
+              <strong>Location:</strong> {formik.values.subCity}, Kebele {formik.values.kebele}<br />
+              <strong>Plot Area:</strong> {formik.values.plotArea} m²<br />
               <strong>Attachments:</strong> {attachments.length} file(s)
             </Typography>
           </Paper>

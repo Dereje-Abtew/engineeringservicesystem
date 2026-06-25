@@ -47,6 +47,7 @@ namespace backend.Data
                     permissionsToAssign.Add(Permissions.RequestsView);
                     permissionsToAssign.Add(Permissions.RequestsViewBranch);
                     permissionsToAssign.Add(Permissions.RequestsApprove);
+                    permissionsToAssign.Add(Permissions.RequestsUploadFinalEstimation);
                 }
                 else if (roleName == "Maker")
                 {
@@ -61,6 +62,7 @@ namespace backend.Data
                     permissionsToAssign.Add(Permissions.RequestsView);
                     permissionsToAssign.Add(Permissions.RequestsViewAll);
                     permissionsToAssign.Add(Permissions.RequestsApprove);
+                    permissionsToAssign.Add(Permissions.RequestsUploadFinalEstimation);
                 }
                 else if (roleName == "EngineeringOfficer")
                 {

@@ -62,9 +62,11 @@ namespace backend.Services
             }
             else if (userPermissions.Contains(Permissions.RequestsViewAllEstimated))
             {
-                // Can see own requests if status is Assigned, OR see all requests if status is Estimated
+                // Can see own requests if status is Assigned, OR see all requests if status is Estimated,
+                // OR see own rejected requests where the engineer was the one who rejected
                 query = query.Where(e => e.Status == RequestStatus.Estimated ||
-                                         (e.AssignedEngineerId == userId && e.Status == RequestStatus.AssignedToEngineer));
+                                         (e.AssignedEngineerId == userId && e.Status == RequestStatus.AssignedToEngineer) ||
+                                         (e.AssignedEngineerId == userId && e.Status == RequestStatus.Rejected && e.LastRejectionBy == "Engineer"));
             }
             else if (userPermissions.Contains(Permissions.RequestsViewAssigned))
             {
@@ -300,6 +302,38 @@ namespace backend.Services
             return true;
         }
 
+        public async Task<bool> EngineerRejectAsync(int id, EngineerRejectDto dto)
+        {
+            var request = await _context.EstimationRequests.FindAsync(id);
+            if (request == null) return false;
+
+            if (request.Status != RequestStatus.AssignedToEngineer) return false;
+
+            request.Status = RequestStatus.Rejected;
+            request.EngineerActionDate = dto.EngineerRejectionDate;
+            request.EngineerRejectionReason = dto.EngineerReason;
+            
+            request.LastRejectionReason = dto.EngineerReason;
+            request.LastRejectionDate = dto.EngineerRejectionDate;
+            request.LastRejectionBy = "Engineer";
+
+            await _context.SaveChangesAsync();
+
+            try
+            {
+                var makerId = request.BranchUserId;
+                var msg = $"Your request #{request.Id} was rejected by the Engineering Officer. Reason: {dto.EngineerReason}";
+                backend.Services.NotificationCenter.Create(
+                    "Request Rejected by Engineer",
+                    msg,
+                    new[] { "Maker" },
+                    string.IsNullOrEmpty(makerId) ? Array.Empty<string>() : new[] { makerId });
+            }
+            catch { }
+
+            return true;
+        }
+
         public async Task<bool> AssignToEngineerAsync(int id, AssignToEngineerDto dto)
         {
             var request = await _context.EstimationRequests
@@ -464,6 +498,42 @@ namespace backend.Services
         public async Task<(bool Succeeded, string? ErrorMessage)> UpdateReportAsync(int id, EngineeringReport report, string userId)
         {
             return await PrepareReportAsync(id, report, userId);
+        }
+
+        public async Task<(bool Succeeded, string? ErrorMessage)> UploadFinalEstimationAsync(int id, List<DTOs.AttachmentUploadDto> attachments, string userId)
+        {
+            var estimationRequest = await _context.EstimationRequests
+                .Include(r => r.Attachments)
+                .FirstOrDefaultAsync(r => r.Id == id);
+
+            if (estimationRequest == null) return (false, "Request not found");
+
+            if (attachments?.Any() == true)
+            {
+                var existingFinalEstimations = estimationRequest.Attachments?
+                    .Where(a => a.DocumentType == "Final Estimation")
+                    .ToList() ?? new List<Attachment>();
+
+                if (existingFinalEstimations.Any())
+                {
+                    _context.Attachments.RemoveRange(existingFinalEstimations);
+                }
+
+                var newAttachments = attachments.Select(a => new Attachment
+                {
+                    FileName = a.FileName,
+                    FilePath = a.FilePath,
+                    DocumentType = "Final Estimation",
+                    EstimationRequestId = estimationRequest.Id,
+                    UploadedById = userId
+                });
+
+                _context.Attachments.AddRange(newAttachments);
+                await _context.SaveChangesAsync();
+                return (true, null);
+            }
+
+            return (false, "No attachments provided");
         }
 
         // =================================================================
@@ -642,7 +712,8 @@ namespace backend.Services
                 Id = a.Id,
                 FileName = a.FileName,
                 FileUrl = a.FilePath,
-                DocumentType = a.DocumentType
+                DocumentType = a.DocumentType,
+                UploadedById = a.UploadedById
             }).ToList() ?? new List<DTOs.AttachmentDto>();
 
             // Permission-based filtering of attachments
@@ -735,6 +806,8 @@ namespace backend.Services
                 ManagerActionDate = request.ManagerActionDate,
                 ManagerActionDescription = request.ManagerActionDescription,
                 ManagerRejectionReason = request.ManagerRejectionReason,
+                EngineerActionDate = request.EngineerActionDate,
+                EngineerRejectionReason = request.EngineerRejectionReason,
                 ProjectFinanceDocType = request.ProjectFinanceDocType,
                 BillOfPenalty = request.BillOfPenalty,
                 LastRejectionReason = request.LastRejectionReason,
@@ -742,6 +815,37 @@ namespace backend.Services
                 LastRejectionBy = request.LastRejectionBy,
                 ResentAt = request.ResentAt,
                 ResendCount = request.ResendCount
+            };
+        }
+
+        public async Task<LocationHistoricalDto> GetHistoricalLocationsAsync()
+        {
+            var cities = await _context.EstimationRequests
+                .Where(r => !string.IsNullOrEmpty(r.City))
+                .Select(r => r.City!)
+                .Distinct()
+                .OrderBy(c => c)
+                .ToListAsync();
+
+            var subCities = await _context.EstimationRequests
+                .Where(r => !string.IsNullOrEmpty(r.SubCity))
+                .Select(r => r.SubCity!)
+                .Distinct()
+                .OrderBy(s => s)
+                .ToListAsync();
+
+            var kebeles = await _context.EstimationRequests
+                .Where(r => !string.IsNullOrEmpty(r.Kebele))
+                .Select(r => r.Kebele!)
+                .Distinct()
+                .OrderBy(k => k)
+                .ToListAsync();
+
+            return new LocationHistoricalDto
+            {
+                Cities = cities,
+                SubCities = subCities,
+                Kebeles = kebeles
             };
         }
     }

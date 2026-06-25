@@ -26,11 +26,13 @@ export const Permissions = {
     RequestsApprove: "Permissions.Requests.Approve",
     RequestsReject: "Permissions.Requests.Reject",
     RequestsAssign: "Permissions.Requests.Assign",
+    RequestsAssignReject: "Permissions.Requests.AssignReject",
     RequestsManageEngineersWorkLoad: "Permissions.Requests.ManageEngineersWorkLoad",
     RequestsEstimate: "Permissions.Requests.Estimate",
     RequestsViewEstimation: "Permissions.Requests.ViewEstimation",
     RequestsViewFilteredEstimation: "Permissions.Requests.ViewFilteredEstimation",
     RequestsSendFilteredEstimation: "Permissions.Requests.SendFilteredEstimation",
+    RequestsUploadFinalEstimation: "Permissions.Requests.UploadFinalEstimation",
 
     // User Management
     UserManagementView: "Permissions.UserManagement.View",

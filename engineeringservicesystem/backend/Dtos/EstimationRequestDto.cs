@@ -52,6 +52,8 @@ namespace backend.DTOs
         public DateTime? ManagerActionDate { get; set; }
         public string? ManagerActionDescription { get; set; }
         public string? ManagerRejectionReason { get; set; }
+        public DateTime? EngineerActionDate { get; set; }
+        public string? EngineerRejectionReason { get; set; }
 
         // Resend workflow audit fields - returned in the response so the
         // frontend can show "Last Rejection" info even after the request
@@ -120,6 +122,7 @@ namespace backend.DTOs
         public string FileName { get; set; } = string.Empty;
         public string FileUrl { get; set; } = string.Empty;
         public string DocumentType { get; set; } = string.Empty;
+        public string? UploadedById { get; set; }
     }
 
     public class AttachmentUploadDto
@@ -158,5 +161,11 @@ namespace backend.DTOs
     {
         [Required] public string EngineerId { get; set; } = string.Empty;
         [Required] public DateTime AssignmentDate { get; set; }
+    }
+
+    public class EngineerRejectDto
+    {
+        [Required] public DateTime EngineerRejectionDate { get; set; }
+        [Required] public string EngineerReason { get; set; } = string.Empty;
     }
 }

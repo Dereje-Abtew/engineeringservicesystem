@@ -34,9 +34,15 @@ namespace backend.Services
         // Engineering officer assignment methods
         Task<bool> AssignToEngineeringOfficerAsync(int id, string officerId);
         Task<(bool Succeeded, string? ErrorMessage)> UpdateReportAsync(int id, EngineeringReport report, string userId);
+        
+        // Engineering officer reject method (NEW)
+        Task<bool> EngineerRejectAsync(int id, EngineerRejectDto dto);
 
         // Engineering officer unassignment method (NEW)
         Task<bool> UnassignEngineeringOfficerAsync(int id);
+
+        // Upload Final Estimation method for managers
+        Task<(bool Succeeded, string? ErrorMessage)> UploadFinalEstimationAsync(int id, List<AttachmentUploadDto> attachments, string userId);
 
         // Resend a rejected request: update fields, set status back to Pending (0),
         // but keep the rejection reason/date fields in the audit trail.
@@ -44,5 +50,8 @@ namespace backend.Services
 
         // Update an editable request (maker editing before Checker action)
         Task<(bool Succeeded, string? ErrorMessage)> UpdateRequestAsync(int id, UpdateEstimationRequestDto dto, string userId);
+
+        // Get historical locations (distinct cities, sub-cities, kebeles from all requests)
+        Task<LocationHistoricalDto> GetHistoricalLocationsAsync();
     }
 }

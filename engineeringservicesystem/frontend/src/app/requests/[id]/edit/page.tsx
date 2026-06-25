@@ -22,7 +22,7 @@ export default function EditRequestPage() {
     validationSchema: Yup.object({
       applicantName: Yup.string().required('Applicant is required'),
       ownerName: Yup.string().required('Owner is required'),
-      lhuNo: Yup.string().required('LHU No is required'),
+      lhuNo: Yup.string().required('LHC No is required'),
     }),
     onSubmit: async (values) => {
       setError(null);
@@ -100,7 +100,7 @@ export default function EditRequestPage() {
                 onChange={formik.handleChange} error={!!(formik.touched.ownerName && formik.errors.ownerName)} helperText={formik.touched.ownerName && formik.errors.ownerName} />
             </Grid>
             <Grid size={{ xs: 12, sm: 6 }}>
-              <TextField fullWidth label="LHU No" name="lhuNo" value={formik.values.lhuNo}
+              <TextField fullWidth label="LHC No" name="lhuNo" value={formik.values.lhuNo}
                 onChange={formik.handleChange} error={!!(formik.touched.lhuNo && formik.errors.lhuNo)} helperText={formik.touched.lhuNo && formik.errors.lhuNo} />
             </Grid>
             <Grid size={{ xs: 12, sm: 6 }}>

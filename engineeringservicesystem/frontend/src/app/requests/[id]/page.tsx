@@ -18,7 +18,7 @@ import { Permissions } from '@/constants/permissions';
 import api from '@/utils/api';
 import Link from 'next/link';
 
-interface Attachment { id?: number; fileName: string; fileUrl: string; documentType: string; }
+interface Attachment { id?: number; fileName: string; fileUrl: string; documentType: string; uploadedById?: string; }
 interface EngineeringReport { remarks: string; estimatedValue: number; siteVisitDate: string; }
 interface EstimationRequest {
   id: number; applicantName: string; ownerName: string; location?: string;
@@ -32,6 +32,7 @@ interface EstimationRequest {
   lastRejectionReason?: string; lastRejectionDate?: string;
   lastRejectionBy?: string; resentAt?: string; resendCount?: number;
   projectFinanceDocType?: string; billOfPenalty?: boolean;
+  branchUserId?: string; assignedEngineerId?: string;
 }
 interface ResendFormValues {
   applicantName: string; ownerName: string; lhuNo: string;
@@ -55,7 +56,7 @@ const TYPE_OPTIONS = ['NewEstimation', 'ReEstimation'];
 
 export default function RequestDetailPage() {
   const { id } = useParams();
-  const { hasPermission } = useAuthStore();
+  const { hasPermission, user } = useAuthStore();
   const router = useRouter();
   const [request, setRequest] = useState<EstimationRequest | null>(null);
   const [loading, setLoading] = useState(true);
@@ -70,7 +71,7 @@ export default function RequestDetailPage() {
   const [sendWarningOpen, setSendWarningOpen] = useState(false);
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
-  const [rejectType, setRejectType] = useState<'checker' | 'manager' | null>(null);
+  const [rejectType, setRejectType] = useState<'checker' | 'manager' | 'engineer' | null>(null);
   const [rejecting, setRejecting] = useState(false);
   const [resendOpen, setResendOpen] = useState(false);
   const [resendForm, setResendForm] = useState<ResendFormValues>({
@@ -123,6 +124,13 @@ export default function RequestDetailPage() {
 
   const toggleFilterSelection = (attachmentId: number) => {
     const attachment = request?.attachments.find(a => a.id === attachmentId);
+    if (attachment?.documentType === 'Estimation Report') {
+      const hasFinal = request?.attachments.some(a => a.documentType === 'Final Estimation');
+      if (!hasFinal) {
+        setError('Estimation Report cannot be selected before receiving the Final Estimation.');
+        return;
+      }
+    }
     if (attachment?.documentType === 'Estimation Excel' && !selectedFilterIds.includes(attachmentId)) {
       setEstimationExcelPendingId(attachmentId); setEstimationExcelWarningOpen(true);
     } else {
@@ -137,13 +145,50 @@ export default function RequestDetailPage() {
   };
   const handleEstimationExcelWarningCancel = () => { setEstimationExcelPendingId(null); setEstimationExcelWarningOpen(false); };
 
-  const openRejectDialog = (type: 'checker' | 'manager') => { setRejectType(type); setRejectReason(''); setRejectDialogOpen(true); };
+  const [uploadingFinal, setUploadingFinal] = useState(false);
+  const handleUploadFinalEstimation = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.toLowerCase().endsWith('.xls') && !file.name.toLowerCase().endsWith('.xlsx')) {
+      setError('Only Excel files (.xls, .xlsx) are allowed for Final Estimation.');
+      e.target.value = '';
+      return;
+    }
+
+    setUploadingFinal(true); setError(null); setSuccessMsg(null);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('documentType', 'Final Estimation');
+
+      const uploadRes = await api.post<{ url: string, fileName: string, filePath: string }>('/Attachments/upload', fd, { silent: true });
+      
+      await api.post(`/EstimationRequests/${id}/final-estimation`, [{
+        fileName: uploadRes.fileName,
+        filePath: uploadRes.filePath,
+        documentType: 'Final Estimation'
+      }]);
+
+      setSuccessMsg('Final estimation uploaded successfully');
+      await fetchRequest();
+    } catch (err: unknown) {
+      const errorObj = err as { message?: string };
+      setError(errorObj.message || 'Failed to upload final estimation');
+    } finally {
+      setUploadingFinal(false);
+      // reset file input
+      e.target.value = '';
+    }
+  };
+
+  const openRejectDialog = (type: 'checker' | 'manager' | 'engineer') => { setRejectType(type); setRejectReason(''); setRejectDialogOpen(true); };
   const handleRejectConfirm = async () => {
     if (!rejectReason.trim()) { setError('Please enter a rejection reason'); return; }
     setRejecting(true); setError(null);
     try {
-      const endpoint = rejectType === 'checker' ? 'checker-reject' : 'manager-reject';
-      const payload = rejectType === 'checker' ? { checkerRejectionDate: new Date().toISOString(), checkerReason: rejectReason } : { managerRejectionDate: new Date().toISOString(), managerReason: rejectReason };
+      const endpoint = rejectType === 'checker' ? 'checker-reject' : (rejectType === 'manager' ? 'manager-reject' : 'engineer-reject');
+      const payload = rejectType === 'checker' ? { checkerRejectionDate: new Date().toISOString(), checkerReason: rejectReason } : (rejectType === 'manager' ? { managerRejectionDate: new Date().toISOString(), managerReason: rejectReason } : { engineerRejectionDate: new Date().toISOString(), engineerReason: rejectReason });
       await api.post(`/EstimationRequests/${id}/${endpoint}`, payload);
       setSuccessMsg('Request rejected successfully. Rejection reason has been recorded.');
       setRejectDialogOpen(false); setRejectReason(''); setRejectType(null);
@@ -210,6 +255,8 @@ export default function RequestDetailPage() {
   const rejectedBy = request.checkerRejectionReason ? 'Checker' : (request.managerRejectionReason ? 'Manager' : (request.lastRejectionBy ?? null));
   const rejectionDate = request.checkerActionDate || request.managerActionDate || request.lastRejectionDate;
 
+  const hasFinalEstimation = (request.attachments ?? []).some(a => a.documentType === 'Final Estimation');
+
   return (
     <DashboardLayout>
       <Box sx={{ mb: 5 }}>
@@ -256,12 +303,14 @@ export default function RequestDetailPage() {
                 {new Date(rejectionDate).toLocaleDateString()} at {new Date(rejectionDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </Typography>
             )}
-            <Button variant="contained"
-              startIcon={resending ? <CircularProgress size={18} color="inherit" /> : <RotateCcw size={18} />}
-              onClick={openResendDialog} disabled={resending}
-              sx={{ bgcolor: '#0891b2', color: 'white', fontWeight: 800, borderRadius: 0, py: 1, px: 3, '&:hover': { bgcolor: '#0e7490' } }}>
-              {resending ? 'Resending...' : 'Edit & Resend for Review'}
-            </Button>
+            {request.branchUserId === user?.id && (
+              <Button variant="contained"
+                startIcon={resending ? <CircularProgress size={18} color="inherit" /> : <RotateCcw size={18} />}
+                onClick={openResendDialog} disabled={resending}
+                sx={{ bgcolor: '#0891b2', color: 'white', fontWeight: 800, borderRadius: 0, py: 1, px: 3, '&:hover': { bgcolor: '#0e7490' } }}>
+                {resending ? 'Resending...' : 'Edit & Resend for Review'}
+              </Button>
+            )}
           </Box>
         </Alert>
       )}
@@ -294,7 +343,7 @@ export default function RequestDetailPage() {
                   <Typography variant="h6" fontWeight="700" sx={{ color: '#0f172a' }}>{request.ownerName}</Typography>
                 </Grid>
                 <Grid size={12}>
-                  <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px' }}>LHU</Typography>
+                  <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px' }}>LHC</Typography>
                   <Typography variant="h6" fontWeight="700" sx={{ color: '#0f172a', fontFamily: 'monospace' }}>{request.lhuNo}</Typography>
                 </Grid>
                 <Grid size={12}>
@@ -327,20 +376,78 @@ export default function RequestDetailPage() {
               <Typography variant="h6" fontWeight="900" sx={{ mb: 3, color: '#064e3b', display: 'flex', alignItems: 'center', gap: 1 }}>
                 <FileText size={20} /> Documents & Attachments
               </Typography>
-              <List sx={{ bgcolor: '#f8fafc', borderRadius: '16px', p: 1 }}>
+              {request.assignedEngineerId === user?.id && (
+                <Alert 
+                  severity={hasFinalEstimation ? "success" : "info"} 
+                  sx={{ 
+                    mb: 2, 
+                    borderRadius: '8px',
+                    animation: hasFinalEstimation ? 'pulse-alert 2s infinite' : 'none',
+                    '@keyframes pulse-alert': {
+                      '0%': { transform: 'scale(1)', boxShadow: '0 0 0 0 rgba(16, 185, 129, 0.4)' },
+                      '50%': { transform: 'scale(1.01)', boxShadow: '0 0 0 8px rgba(16, 185, 129, 0)' },
+                      '100%': { transform: 'scale(1)', boxShadow: '0 0 0 0 rgba(16, 185, 129, 0)' }
+                    }
+                  }}
+                >
+                  {hasFinalEstimation ? (
+                    <Typography variant="body2" sx={{ fontWeight: 800, color: '#065f46' }}>
+                      🎉 Final Estimation is now available! The Estimation Report upload is active. Please upload and submit your Estimation Report to the manager.
+                    </Typography>
+                  ) : (
+                    <Typography variant="body2">
+                      Waiting for the <strong>Final Estimation</strong> to be uploaded by the manager (requires the "Estimation Excel" and "Relevant Photo PDF" to be uploaded first). The Estimation Report upload is disabled until then. Once received, it will become active.
+                    </Typography>
+                  )}
+                </Alert>
+              )}
+              {hasPermission(Permissions.RequestsUploadFinalEstimation) && request.attachments.some(a => a.documentType === 'Estimation Excel') && request.attachments.some(a => a.documentType === 'Relevant Photo') && (
+                <Alert severity="info" sx={{ mb: 2, borderRadius: '8px', bgcolor: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd' }}>
+                  <Typography variant="body2">
+                    Please review the documents. Once the valuation is approved, <strong>upload the Final Estimation</strong>. 
+                    After uploading, please <strong>select the Estimation Report checkbox</strong> and click "Send Filter" to send it to the checker.
+                  </Typography>
+                </Alert>
+              )}
+              {(() => {
+                const isAssignedEngineer = user?.id != null && user.id === request.assignedEngineerId;
+                return (
+                  <List sx={{ bgcolor: '#f8fafc', borderRadius: '16px', p: 1 }}>
                 {request.attachments.map((file, index) => {
                   const isSelectable = canSelectEstimationDocs && file.id != null && SELECTABLE_DOCUMENT_TYPES.has(file.documentType);
                   const isSelected = isSelectable && selectedFilterIds.includes(file.id as number);
+                  const isFinalEstimation = file.documentType === 'Final Estimation';
+                  const isEstimationReport = file.documentType === 'Estimation Report';
+                  const isDisabledReport = isEstimationReport && !hasFinalEstimation;
+                  
+                  if (isFinalEstimation && !isAssignedEngineer && !(user?.id != null && file.uploadedById === user.id)) return null;
+                  
                   return (
                     <ListItem key={file.id ?? index}
-                      sx={{ bgcolor: isSelected ? 'rgba(16, 185, 129, 0.06)' : 'white', mb: 1, borderRadius: 0, border: isSelected ? '1px solid #10b981' : '1px solid #f1f5f9' }}
+                      sx={{ 
+                        bgcolor: isSelected ? 'rgba(16, 185, 129, 0.06)' : 'white', 
+                        mb: 1, 
+                        borderRadius: isFinalEstimation ? '8px' : 0, 
+                        border: isFinalEstimation ? '2px solid #8b5cf6' : (isSelected ? '1px solid #10b981' : '1px solid #f1f5f9'),
+                        animation: isFinalEstimation ? 'pulse-border 2s infinite' : 'none',
+                        '@keyframes pulse-border': {
+                          '0%': { borderColor: '#8b5cf6', boxShadow: '0 0 0 0 rgba(139, 92, 246, 0.4)' },
+                          '50%': { borderColor: '#c4b5fd', boxShadow: '0 0 0 6px rgba(139, 92, 246, 0)' },
+                          '100%': { borderColor: '#8b5cf6', boxShadow: '0 0 0 0 rgba(139, 92, 246, 0)' }
+                        }
+                      }}
                       secondaryAction={
                         <IconButton component="a" href={file.fileUrl} target="_blank" sx={{ color: '#064e3b', bgcolor: 'rgba(6, 78, 59, 0.05)' }}>
                           <Download size={18} />
                         </IconButton>
                       }>
                       {isSelectable && (
-                        <Checkbox checked={isSelected} onChange={() => toggleFilterSelection(file.id as number)} sx={{ color: '#10b981', '&.Mui-checked': { color: '#10b981' }, mr: 1 }} />
+                        <Checkbox 
+                          checked={isSelected} 
+                          disabled={isDisabledReport}
+                          onChange={() => toggleFilterSelection(file.id as number)} 
+                          sx={{ color: '#10b981', '&.Mui-checked': { color: '#10b981' }, mr: 1 }} 
+                        />
                       )}
                       <ListItemIcon sx={{ minWidth: 45 }}><FileText color="#64748b" /></ListItemIcon>
                       <ListItemText primary={file.fileName} secondary={file.documentType}
@@ -353,13 +460,24 @@ export default function RequestDetailPage() {
                   <Typography variant="body2" sx={{ color: '#94a3b8', p: 2 }}>No attachments available.</Typography>
                 )}
               </List>
-              {canSelectEstimationDocs && selectableAttachments.length > 0 && (
-                <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end' }}>
-                  <Button variant="contained" startIcon={sendingFilter ? <CircularProgress size={18} color="inherit" /> : <Filter size={18} />}
-                    onClick={handleSendFilter} disabled={sendingFilter}
-                    sx={{ bgcolor: '#064e3b', color: 'white', fontWeight: 800, borderRadius: 0, '&:hover': { bgcolor: '#065f46' } }}>
-                    {sendingFilter ? 'Sending...' : `Send Filter (${selectedFilterIds.length} selected)`}
-                  </Button>
+              );})()}
+              {(canSelectEstimationDocs || (hasPermission(Permissions.RequestsUploadFinalEstimation) && request.attachments.some(a => a.documentType === 'Estimation Excel') && request.attachments.some(a => a.documentType === 'Relevant Photo'))) && (
+                <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
+                  {hasPermission(Permissions.RequestsUploadFinalEstimation) && request.attachments.some(a => a.documentType === 'Estimation Excel') && request.attachments.some(a => a.documentType === 'Relevant Photo') && (
+                    <Button component="label" variant="outlined" disabled={uploadingFinal}
+                      startIcon={uploadingFinal ? <CircularProgress size={18} color="inherit" /> : <FileText size={18} />}
+                      sx={{ borderColor: '#0891b2', color: '#0891b2', fontWeight: 800, borderRadius: 0, '&:hover': { bgcolor: 'rgba(8, 145, 178, 0.05)' } }}>
+                      {uploadingFinal ? 'Uploading...' : 'Upload Final Estimation'}
+                      <input type="file" hidden onChange={handleUploadFinalEstimation} accept=".xls,.xlsx" />
+                    </Button>
+                  )}
+                  {canSelectEstimationDocs && selectableAttachments.length > 0 && (
+                    <Button variant="contained" startIcon={sendingFilter ? <CircularProgress size={18} color="inherit" /> : <Filter size={18} />}
+                      onClick={handleSendFilter} disabled={sendingFilter}
+                      sx={{ bgcolor: '#064e3b', color: 'white', fontWeight: 800, borderRadius: 0, '&:hover': { bgcolor: '#065f46' } }}>
+                      {sendingFilter ? 'Sending...' : `Send Filter (${selectedFilterIds.length} selected)`}
+                    </Button>
+                  )}
                 </Box>
               )}
             </Paper>
@@ -368,7 +486,7 @@ export default function RequestDetailPage() {
 
         <Grid size={{ xs: 12, md: 5 }}>
           <Stack spacing={4}>
-            {isRejected && (
+            {isRejected && request.branchUserId === user?.id && (
               <Paper elevation={0} sx={{ p: 4, borderRadius: 0, border: '2px solid #0891b2', bgcolor: 'rgba(8, 145, 178, 0.02)' }}>
                 <Typography variant="h6" fontWeight="900" sx={{ mb: 1, color: '#064e3b', display: 'flex', alignItems: 'center', gap: 1 }}>
                   <RotateCcw size={20} color="#0891b2" /> Re-submit Request
@@ -435,6 +553,18 @@ export default function RequestDetailPage() {
                     sx={{ bgcolor: '#10b981', color: 'white', fontWeight: 800, borderRadius: 0, py: 1.5, '&:hover': { bgcolor: '#059669' } }}>Approve</Button>
                   <Button variant="outlined" fullWidth onClick={() => openRejectDialog('manager')}
                     sx={{ borderColor: '#dc2626', color: '#dc2626', fontWeight: 800, borderRadius: 0, py: 1.5, '&:hover': { bgcolor: 'rgba(220, 38, 38, 0.05)' } }}>Reject</Button>
+                </Stack>
+              </Paper>
+            )}
+
+            {hasPermission(Permissions.RequestsAssignReject) && request.assignedEngineerId === user?.id && (request.status === 3 || request.status === 4) && (
+              <Paper elevation={0} sx={{ p: 4, borderRadius: 0, border: '2px solid #f59e0b', bgcolor: 'rgba(245, 158, 11, 0.02)' }}>
+                <Typography variant="h6" fontWeight="900" sx={{ mb: 3, color: '#b45309', display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <XCircleIcon size={20} color="#f59e0b" /> Engineer Review Action
+                </Typography>
+                <Stack direction="row" spacing={2}>
+                  <Button variant="outlined" fullWidth onClick={() => openRejectDialog('engineer')}
+                    sx={{ borderColor: '#dc2626', color: '#dc2626', fontWeight: 800, borderRadius: 0, py: 1.5, '&:hover': { bgcolor: 'rgba(220, 38, 38, 0.05)' } }}>Reject Request</Button>
                 </Stack>
               </Paper>
             )}
@@ -509,7 +639,7 @@ export default function RequestDetailPage() {
                 sx={{ '& .MuiOutlinedInput-root': { borderRadius: '8px' } }} />
             </Grid>
             <Grid size={{ xs: 12, sm: 6 }}>
-              <TextField fullWidth label="LHU Number *" value={resendForm.lhuNo}
+              <TextField fullWidth label="LHC Number *" value={resendForm.lhuNo}
                 onChange={(e) => handleResendFormChange('lhuNo', e.target.value)}
                 sx={{ '& .MuiOutlinedInput-root': { borderRadius: '8px' } }} />
             </Grid>

@@ -90,9 +90,11 @@ export default function RequestsTable({
         }
       }
 
-      // Engineering Officer with ViewAssigned - see only own assigned requests (status 3)
+      // Engineering Officer with ViewAssigned - see own assigned requests (status 3 or 4)
+      // AND requests they personally rejected (status 5, lastRejectionBy === 'Engineer')
       if (canViewAssigned && request.assignedEngineerId === currentUserId) {
-        return request.status === 3 || request.status === 4;
+        if (request.status === 3 || request.status === 4) return true;
+        if (request.status === 5 && request.lastRejectionBy === 'Engineer') return true;
       }
 
       // Regular user with ViewOwn - see only their own requests
@@ -154,7 +156,7 @@ export default function RequestsTable({
       },
       { 
         accessorKey: 'lhuNo', 
-        header: 'LHU No', 
+        header: 'LHC No', 
         size: 120, 
         Cell: ({ cell }) => <Typography fontFamily="monospace" fontWeight={500}>{cell.getValue<string>()}</Typography> 
       },

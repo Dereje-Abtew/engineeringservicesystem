@@ -80,6 +80,11 @@ export function usePermissions() {
     return hasPermission('Permissions.Requests.Estimate') && assignedToMe && (requestStatus === 4 || hasReport);
   };
 
+  const canEngineerReject = (requestStatus: number, assignedToMe: boolean): boolean => {
+    // Engineer can reject only when status is Assigned (3) and they are the assigned engineer
+    return hasPermission('Permissions.Requests.AssignReject') && requestStatus === 3 && assignedToMe;
+  };
+
   /**
    * The maker (the user who created the request) can resend a
    * rejected request. We check:
@@ -91,6 +96,10 @@ export function usePermissions() {
    */
   const canResendRejectedRequest = (requestStatus: number, isOwner: boolean): boolean => {
     return hasPermission('Permissions.Requests.Create') && requestStatus === 5 && isOwner;
+  };
+
+  const canUploadFinalEstimation = (): boolean => {
+    return hasPermission('Permissions.Requests.UploadFinalEstimation');
   };
 
   return {
@@ -111,8 +120,10 @@ export function usePermissions() {
     canManageWorkload,
     canEstimateRequest,
     canEditEstimation,
+    canEngineerReject,
     canResendRejectedRequest,
     canViewEstimationReport,
+    canUploadFinalEstimation,
     userPermissions: user?.permissions || [],
   };
 }

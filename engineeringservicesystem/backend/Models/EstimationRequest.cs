@@ -74,6 +74,9 @@ public class EstimationRequest
     public string? AssignedEngineerId { get; set; }
     public ApplicationUser? AssignedEngineer { get; set; }
     public DateTime? EngineerAssignmentDate { get; set; }
+    public DateTime? EngineerActionDate { get; set; }
+    public string? EngineerRejectionReason { get; set; }
+    
     // Project Finance specific fields
     public string? ProjectFinanceDocType { get; set; }
     public bool? BillOfPenalty { get; set; }

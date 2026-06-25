@@ -46,6 +46,16 @@ namespace backend.Controllers
             return Ok(requests);
         }
 
+        // GET: api/EstimationRequests/historical-locations
+        [Authorize]
+        [HttpGet("historical-locations")]
+        [ProducesResponseType(StatusCodes.Status200OK, Type = typeof(LocationHistoricalDto))]
+        public async Task<ActionResult<LocationHistoricalDto>> GetHistoricalLocations()
+        {
+            var result = await _requestsService.GetHistoricalLocationsAsync();
+            return Ok(result);
+        }
+
         // GET: api/EstimationRequests/5
         [Authorize(Policy = Permissions.RequestsView)]
         [HttpGet("{id}")]
@@ -199,6 +209,32 @@ namespace backend.Controllers
         }
 
         // =================================================================
+        // MANAGER FINAL ESTIMATION UPLOAD ENDPOINT
+        // =================================================================
+
+        [Authorize(Policy = Permissions.RequestsUploadFinalEstimation)]
+        [HttpPost("{id}/final-estimation")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> UploadFinalEstimation(int id, [FromBody] List<AttachmentUploadDto> attachments)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId))
+            {
+                return Unauthorized();
+            }
+
+            var (succeeded, errorMessage) = await _requestsService.UploadFinalEstimationAsync(id, attachments, userId);
+            if (!succeeded)
+            {
+                return BadRequest(new { message = errorMessage });
+            }
+
+            return Ok(new { message = "Final estimation uploaded successfully" });
+        }
+
+        // =================================================================
         // MANAGER ASSIGN ENGINEERING OFFICER ENDPOINT
         // =================================================================
 
@@ -241,6 +277,24 @@ namespace backend.Controllers
             }
 
             return Ok(new { message = "Engineering officer unassigned successfully" });
+        }
+
+        // =================================================================
+        // ENGINEER REJECT ENDPOINT
+        // =================================================================
+        [Authorize(Policy = Permissions.RequestsAssignReject)]
+        [HttpPost("{id}/engineer-reject")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> EngineerReject(int id, [FromBody] EngineerRejectDto dto)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+
+            var result = await _requestsService.EngineerRejectAsync(id, dto);
+            if (!result) return NotFound(new { message = "Estimation request not found or not assigned to an engineer" });
+
+            return Ok(new { message = "Request rejected successfully by Engineering Officer" });
         }
 
         // PUT: api/EstimationRequests/5/report
