@@ -87,6 +87,18 @@ namespace backend.Controllers
 
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
 
+            // Only the assigned engineer can send filtered estimation attachments
+            var estimationRequest = await _context.EstimationRequests
+                .FirstOrDefaultAsync(e => e.Id == dto.EstimationRequestId);
+            if (estimationRequest == null)
+            {
+                return NotFound(new { message = "Estimation request not found" });
+            }
+            if (estimationRequest.AssignedEngineerId != userId)
+            {
+                return BadRequest(new { message = "Only the assigned engineering officer can send the estimation report" });
+            }
+
             // Remove existing filter rows for this request
             var existing = await _context.FilteredEstimationAttachments
                 .Where(f => f.EstimationRequestId == dto.EstimationRequestId)

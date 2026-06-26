@@ -487,6 +487,58 @@ namespace backend.Services
             }
 
             await _context.SaveChangesAsync();
+
+            // Auto-share the "Estimation Report" attachment to both Manager and Checker
+            // by inserting it into FilteredEstimationAttachments immediately upon submission.
+            // This means neither Manager nor Checker has to wait for the Engineer to manually "Send".
+            try
+            {
+                // Re-fetch attachments after SaveChanges so we see the newly inserted rows
+                var estimationReportAttachments = await _context.Attachments
+                    .Where(a => a.EstimationRequestId == estimationRequest.Id
+                                && a.DocumentType == "Estimation Report")
+                    .ToListAsync();
+
+                if (estimationReportAttachments.Any())
+                {
+                    // Remove any stale filtered rows for this request so we don't duplicate
+                    var staleFiltered = await _context.FilteredEstimationAttachments
+                        .Where(f => f.EstimationRequestId == estimationRequest.Id)
+                        .ToListAsync();
+                    if (staleFiltered.Any())
+                        _context.FilteredEstimationAttachments.RemoveRange(staleFiltered);
+
+                    // Insert fresh rows — one per Estimation Report attachment
+                    foreach (var att in estimationReportAttachments)
+                    {
+                        _context.FilteredEstimationAttachments.Add(new FilteredEstimationAttachment
+                        {
+                            EstimationRequestId = estimationRequest.Id,
+                            AttachmentId = att.Id,
+                            CreatedAt = DateTime.UtcNow,
+                            CreatedBy = userId
+                        });
+                    }
+
+                    await _context.SaveChangesAsync();
+                }
+            }
+            catch { /* Never break the main flow over the auto-share step */ }
+
+            // Notify both Manager and Checker that the estimation report has been submitted by the engineer
+            try
+            {
+                var engineerName = estimationRequest.AssignedEngineer?.FirstName ?? "Engineer";
+                var engineerLastName = estimationRequest.AssignedEngineer?.LastName ?? "";
+                var fullName = $"{engineerName} {engineerLastName}".Trim();
+                backend.Services.NotificationCenter.Create(
+                    "Estimation Report Submitted",
+                    $"Estimation report for Request #{estimationRequest.Id} has been submitted by {fullName}. Ready for review by Checker and Manager.",
+                    new[] { "Checker", "Manager" },
+                    Array.Empty<string>());
+            }
+            catch { }
+
             return (true, null);
         }
 

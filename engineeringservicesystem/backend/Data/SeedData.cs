@@ -48,6 +48,7 @@ namespace backend.Data
                     permissionsToAssign.Add(Permissions.RequestsViewBranch);
                     permissionsToAssign.Add(Permissions.RequestsApprove);
                     permissionsToAssign.Add(Permissions.RequestsUploadFinalEstimation);
+                    permissionsToAssign.Add(Permissions.RequestsViewFilteredEstimation); // See Estimation Report sent by Engineer
                 }
                 else if (roleName == "Maker")
                 {
@@ -63,6 +64,7 @@ namespace backend.Data
                     permissionsToAssign.Add(Permissions.RequestsViewAll);
                     permissionsToAssign.Add(Permissions.RequestsApprove);
                     permissionsToAssign.Add(Permissions.RequestsUploadFinalEstimation);
+                    permissionsToAssign.Add(Permissions.RequestsViewFilteredEstimation); // See Estimation Report sent by Engineer
                 }
                 else if (roleName == "EngineeringOfficer")
                 {

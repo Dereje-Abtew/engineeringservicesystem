@@ -240,7 +240,7 @@ export default function RequestDetailPage() {
   const handleResendSelectChange = (field: keyof ResendFormValues) =>
     (e: SelectChangeEvent<string>) => handleResendFormChange(field, e.target.value);
 
-  const canSelectEstimationDocs = hasPermission(Permissions.RequestsViewEstimation);
+  const canSelectEstimationDocs = hasPermission(Permissions.RequestsViewEstimation) && request?.assignedEngineerId === user?.id;
   const canViewFilteredEstimation = hasPermission(Permissions.RequestsViewFilteredEstimation);
   const selectableAttachments = useMemo(() => {
     if (!request) return [];
@@ -392,7 +392,7 @@ export default function RequestDetailPage() {
                 >
                   {hasFinalEstimation ? (
                     <Typography variant="body2" sx={{ fontWeight: 800, color: '#065f46' }}>
-                      🎉 Final Estimation is now available! The Estimation Report upload is active. Please upload and submit your Estimation Report to the manager.
+                      🎉 Final Estimation is now available! The Estimation Report upload is active. Please upload and submit your Estimation Report to the checker and manager.
                     </Typography>
                   ) : (
                     <Typography variant="body2">

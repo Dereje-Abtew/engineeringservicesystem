@@ -587,7 +587,7 @@ const ViewDetailsDialog = ({ open, onClose, request }: { open: boolean; onClose:
               <Alert severity="info" sx={{ mb: 2, borderRadius: '8px', bgcolor: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd' }}>
                 <Typography variant="body2">
                   Please review the documents. Once the valuation is approved, <strong>upload the Final Estimation</strong>.
-                  After uploading, please <strong>select the Estimation Report checkbox</strong> and click "Send" to send it to the checker.
+                  After uploading, please <strong>select the Estimation Report checkbox</strong> and click "Send" to send it to the checker and manager.
                 </Typography>
               </Alert>
             </Grid>
@@ -596,7 +596,7 @@ const ViewDetailsDialog = ({ open, onClose, request }: { open: boolean; onClose:
             {loadingAttachments ? <Box sx={{ textAlign: 'center', py: 4 }}><CircularProgress /></Box>
               : attachments.length === 0 ? <Box sx={{ p: 4, bgcolor: '#f8fafc', textAlign: 'center' }}><Typography variant="body2" sx={{ color: '#94a3b8' }}>No attachments</Typography></Box>
                 : (() => {
-                  const canSelectEstimationDocs = hasPermission(Permissions.RequestsViewEstimation);
+                  const canSelectEstimationDocs = hasPermission(Permissions.RequestsViewEstimation) && request.assignedEngineerId === user?.id;
                   const canViewFinalEstimation = (userId: string | undefined) => {
                     if (!userId) return false;
                     return userId === request.assignedEngineerId;
@@ -728,12 +728,12 @@ const ViewDetailsDialog = ({ open, onClose, request }: { open: boolean; onClose:
                 })()}
           </Grid>
 
-          {/* Filtered Estimation Documents - for users with Requests.ViewFilteredEstimation */}
+          {/* Estimation Report - for users with Requests.ViewFilteredEstimation */}
           {hasPermission(Permissions.RequestsViewFilteredEstimation) && (request.filteredEstimationAttachments?.length ?? 0) > 0 && (
             <Grid item xs={12}>
               <Paper elevation={0} sx={{ p: 3, mt: 1, borderRadius: '12px', border: '1px solid #10b981', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', bgcolor: 'rgba(16, 185, 129, 0.02)' }}>
                 <Typography variant="subtitle1" fontWeight="900" sx={{ mb: 2, color: '#10b981', display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <CheckCircle2 size={20} /> Filtered Estimation Documents
+                  <CheckCircle2 size={20} /> Estimation Report
                 </Typography>
                 <Grid container spacing={2}>
                   {request.filteredEstimationAttachments!.map((att, idx) => (
@@ -2367,8 +2367,11 @@ export default function RequestsPage() {
 
   const getMissingDocumentTypes = () => {
     const required = ['Estimation Fee'];
+    // Always require Land LHC for all building types
+    required.push('Land LHC');
+    // Only require Floor Plan when NOT Condominium
     if (formik.values.buildingType !== 'Condominium') {
-      required.push('Land LHC', 'Floor Plan');
+      required.push('Floor Plan');
     }
     if (formik.values.purpose === 'Project Finance') {
       required.push('Construction Permit');
@@ -2466,7 +2469,7 @@ export default function RequestsPage() {
       );
     }
     if (canEstimateRequest(selectedRow.status, selectedRow.assignedEngineerId === user?.id, !!selectedRow.report)) items.push(<MenuItem key="estimate" onClick={() => handleEstimate(selectedRow, false)}><ListItemIcon><FileText size={18} /></ListItemIcon><ListItemText primary="Send Estimation" /></MenuItem>);
-    if (canEditEstimation(selectedRow.status, selectedRow.assignedEngineerId === user?.id, !!selectedRow.report)) items.push(<MenuItem key="re-estimate" onClick={() => handleEstimate(selectedRow, true)}><ListItemIcon><Edit size={18} /></ListItemIcon><ListItemText primary="Re-Estimate" /></MenuItem>);
+    if (canEditEstimation(selectedRow.status, selectedRow.assignedEngineerId === user?.id, !!selectedRow.report)) items.push(<MenuItem key="re-estimate" onClick={() => handleEstimate(selectedRow, true)}><ListItemIcon><Edit size={18} /></ListItemIcon><ListItemText primary="Send Estimation Report" /></MenuItem>);
     if (canEngineerReject(selectedRow.status, selectedRow.assignedEngineerId === user?.id)) items.push(<MenuItem key="eng-reject" onClick={() => { setWorkflowAction('engineer_reject'); handleMenuClose(); }}><ListItemIcon><XCircle size={18} color="#dc2626" /></ListItemIcon><ListItemText primary="Reject Assigned Request" /></MenuItem>);
     if (selectedRow.report) items.push(<MenuItem key="view-report" onClick={() => handleView(selectedRow)}><ListItemIcon><FileText size={18} /></ListItemIcon><ListItemText primary="View Submitted Report" /></MenuItem>);
     return items;
@@ -3012,11 +3015,9 @@ export default function RequestsPage() {
               <Typography variant="subtitle2" fontWeight="700" sx={{ color: '#064E3B', mb: 2 }}>Supporting Documents</Typography>
               <Box display="flex" gap={1.5} flexWrap="wrap" mb={2}>
                 <Button component="label" variant="outlined" size="small" startIcon={uploading ? <CircularProgress size={14} /> : <Upload size={14} />} disabled={uploading}>Estimation Fee<input type="file" hidden onChange={(e) => uploadFile(e, 'Estimation Fee')} accept=".pdf,.jpg,.jpeg,.png" /></Button>
+                <Button component="label" variant="outlined" size="small" startIcon={uploading ? <CircularProgress size={14} /> : <Upload size={14} />} disabled={uploading}>Land LHC<input type="file" hidden onChange={(e) => uploadFile(e, 'Land LHC')} accept=".pdf,.jpg,.jpeg,.png" /></Button>
                 {formik.values.buildingType !== 'Condominium' && (
-                  <>
-                    <Button component="label" variant="outlined" size="small" startIcon={uploading ? <CircularProgress size={14} /> : <Upload size={14} />} disabled={uploading}>Land LHC<input type="file" hidden onChange={(e) => uploadFile(e, 'Land LHC')} accept=".pdf,.jpg,.jpeg,.png" /></Button>
-                    <Button component="label" variant="outlined" size="small" startIcon={uploading ? <CircularProgress size={14} /> : <Upload size={14} />} disabled={uploading}>Floor Plan<input type="file" hidden onChange={(e) => uploadFile(e, 'Floor Plan')} accept=".pdf,.jpg,.jpeg,.png" /></Button>
-                  </>
+                  <Button component="label" variant="outlined" size="small" startIcon={uploading ? <CircularProgress size={14} /> : <Upload size={14} />} disabled={uploading}>Floor Plan<input type="file" hidden onChange={(e) => uploadFile(e, 'Floor Plan')} accept=".pdf,.jpg,.jpeg,.png" /></Button>
                 )}
                 <Button component="label" variant="outlined" size="small" startIcon={uploading ? <CircularProgress size={14} /> : <Upload size={14} />} disabled={uploading}>Other Document (Optional)<input type="file" hidden onChange={(e) => uploadFile(e, 'Other Document')} accept=".pdf,.jpg,.jpeg,.png" /></Button>
               </Box>
