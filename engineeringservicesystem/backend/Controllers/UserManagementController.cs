@@ -71,7 +71,7 @@ namespace backend.Controllers
         public async Task<IActionResult> DeleteUser(string id)
         {
             var succeeded = await _userService.DeleteUserAsync(id);
-            if (!succeeded) return NotFound();
+            if (!succeeded) return NotFound(new { message = "User not found or could not be deleted." });
             return NoContent();
         }
 

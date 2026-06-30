@@ -179,7 +179,11 @@ namespace backend.Services
             user.Position = model.Position;
             user.PhoneNumber = model.PhoneNumber;
             user.IsActive = model.IsActive;
-            user.UserType = model.UserType;
+            // Preserve existing UserType — the admin form does not expose this field
+            // so the DTO always arrives as the default enum value (0).
+            // Only update if the caller explicitly sends a non-zero value.
+            if (model.UserType != 0)
+                user.UserType = model.UserType;
 
             if (!string.IsNullOrEmpty(model.Role))
             {
@@ -199,8 +203,41 @@ namespace backend.Services
             var user = await _userManager.FindByIdAsync(id);
             if (user == null) return false;
 
-            await _userManager.DeleteAsync(user);
-            return true;
+            // Nullify FK references so the delete doesn't violate constraints
+            // EstimationRequests.BranchUserId and AssignedEngineerId reference this user
+            var ownedRequests = await _context.EstimationRequests
+                .Where(r => r.BranchUserId == id)
+                .ToListAsync();
+            foreach (var req in ownedRequests)
+                req.BranchUserId = null;
+
+            var assignedRequests = await _context.EstimationRequests
+                .Where(r => r.AssignedEngineerId == id)
+                .ToListAsync();
+            foreach (var req in assignedRequests)
+            {
+                req.AssignedEngineerId = null;
+                req.EngineerAssignmentDate = null;
+            }
+
+            // Nullify Department.HeadId if this user is a department head
+            var ledDepartments = await _context.Departments
+                .Where(d => d.HeadId == id)
+                .ToListAsync();
+            foreach (var dept in ledDepartments)
+                dept.HeadId = null;
+
+            // Nullify Branch.ManagerId if this user is a branch manager
+            var managedBranches = await _context.Branches
+                .Where(b => b.ManagerId == id)
+                .ToListAsync();
+            foreach (var branch in managedBranches)
+                branch.ManagerId = null;
+
+            await _context.SaveChangesAsync();
+
+            var result = await _userManager.DeleteAsync(user);
+            return result.Succeeded;
         }
 
         public async Task<(bool Succeeded, IEnumerable<IdentityError>? Errors)> ResetPasswordAsync(string id, ResetPasswordModel model)
@@ -294,6 +331,16 @@ namespace backend.Services
             if (role.Name == "Admin" || role.Name == "SystemAdmin")
             {
                 return (false, "Cannot delete core system roles.", null);
+            }
+
+            // Remove all users from this role before deleting to avoid FK constraint errors
+            if (role.Name != null)
+            {
+                var usersInRole = await _userManager.GetUsersInRoleAsync(role.Name);
+                foreach (var user in usersInRole)
+                {
+                    await _userManager.RemoveFromRoleAsync(user, role.Name);
+                }
             }
 
             var result = await _roleManager.DeleteAsync(role);

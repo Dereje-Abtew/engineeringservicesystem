@@ -58,6 +58,7 @@ export default function UsersPage() {
   const currentUser = useAuthStore((state) => state.user);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [isEdit, setIsEdit] = useState(false);
+  const [editUserId, setEditUserId] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
 
   // Validation states
@@ -199,12 +200,17 @@ export default function UsersPage() {
     setInfoMessage('');
     setIsBasedAtBranch(false);
     setIsEdit(false);
+    setEditUserId(null);
     setOpen(true);
   };
 
   const handleEditOpen = () => {
     const userToEdit = users.find(u => u.id === selectedUserId);
     if (!userToEdit) return;
+
+    // Capture the id into a dedicated edit state BEFORE closing the menu
+    // (handleMenuClose resets selectedUserId to null)
+    const editUserId = userToEdit.id;
 
     const editData = {
       email: userToEdit.email || '',
@@ -221,7 +227,7 @@ export default function UsersPage() {
     };
 
     setFormData(editData);
-    setInitialEditData({ ...editData }); // Clone baseline snapshot accurately to ensure comparison matches on clean loads
+    setInitialEditData({ ...editData });
     setErrors({});
     setTouched({});
     setError('');
@@ -229,6 +235,7 @@ export default function UsersPage() {
     const isBranch = !!userToEdit.branchId;
     setIsBasedAtBranch(isBranch);
     setIsEdit(true);
+    setEditUserId(editUserId); // store separately — not affected by menu close
     setOpen(true);
     handleMenuClose();
   };
@@ -240,6 +247,7 @@ export default function UsersPage() {
     setErrors({});
     setTouched({});
     setIsEdit(false);
+    setEditUserId(null);
     setInitialEditData(null);
   };
 
@@ -284,8 +292,8 @@ export default function UsersPage() {
           departmentId: formData.departmentId || null,
         };
         
-        if (isEdit && selectedUserId) {
-          await api.put(`/UserManagement/users/${selectedUserId}`, payload);
+        if (isEdit && editUserId) {
+          await api.put(`/UserManagement/users/${editUserId}`, payload);
         } else {
           await api.post('/UserManagement/register', payload);
         }
@@ -313,18 +321,19 @@ export default function UsersPage() {
   const handleResetPassword = async () => {
     if (!selectedUserId) return;
     const defaultPassword = 'ChangeMe@123';
-    
+    const userToReset = users.find(u => u.id === selectedUserId);
     showConfirm(
       'Reset User Password',
-      `Are you sure you want to reset this user's password to "${defaultPassword}"?`,
+      `Are you sure you want to reset ${userToReset?.firstName} ${userToReset?.lastName}'s password to "${defaultPassword}"? They must change it on next login.`,
       async () => {
         try {
-          await api.post(`/UserManagement/users/${selectedUserId}/reset-password`, { 
-            newPassword: defaultPassword 
-          });
-          handleMenuClose();
+          await api.post(`/UserManagement/users/${selectedUserId}/reset-password`, {
+            newPassword: defaultPassword
+          }, { silent: true });
+          setAnchorEl(null);
+          setSelectedUserId(null);
         } catch (err: any) {
-          setError(err.message);
+          setError(err.message || 'Failed to reset password.');
         }
       }
     );
@@ -332,16 +341,18 @@ export default function UsersPage() {
 
   const handleDelete = async () => {
     if (!selectedUserId) return;
+    const userToDelete = users.find(u => u.id === selectedUserId);
     showConfirm(
       'Delete User Account',
-      'Are you sure you want to permanently delete this user? This action cannot be undone.',
+      `Are you sure you want to permanently delete ${userToDelete?.firstName} ${userToDelete?.lastName}? This action cannot be undone.`,
       async () => {
         try {
           await api.delete(`/UserManagement/users/${selectedUserId}`);
-          fetchData();
-          handleMenuClose();
+          setAnchorEl(null);
+          setSelectedUserId(null);
+          await fetchData();
         } catch (err: any) {
-          setError(err.message);
+          setError(err.message || 'Failed to delete user. The user may have active requests assigned.');
         }
       }
     );
