@@ -73,9 +73,9 @@ export default function RequestsTable({
     const canViewAssigned = hasPermission('Permissions.Requests.ViewAssigned');
 
     return data.filter((request) => {
-      // Admin/Manager with ViewAll - see everything except status 0 (pending checker)
+      // Manager/Admin with ViewAll - see ALL requests including pending (status 0)
       if (canViewAll) {
-        return request.status !== 0;
+        return true;
       }
 
       // Branch user with ViewBranch - see all requests from their branch
@@ -107,15 +107,19 @@ export default function RequestsTable({
   }, [data, hasPermission, currentUserId, currentBranchId]);
 
   const getStatusChip = (status: number, lastReason?: string, lastBy?: string, lastDate?: string) => {
+    // Status config is driven by the RequestStatus enum values from the backend.
+    // Labels use role-neutral language so no rename is needed if roles change.
     const config: Record<number, { label: string; color: string; bg: string; icon: string }> = {
-      0: { label: 'Pending Checker', color: '#d97706', bg: '#fef3c7', icon: '⏳' },
-      1: { label: 'Checker Approved', color: '#2563eb', bg: '#eff6ff', icon: '✓' },
-      2: { label: 'Manager Approved', color: '#059669', bg: '#ecfdf5', icon: '✓✓' },
-      3: { label: 'Assigned', color: '#7c3aed', bg: '#f5f3ff', icon: '👷' },
-      4: { label: 'Estimated', color: '#0891b2', bg: '#ecfeff', icon: '💰' },
-      5: { label: 'Rejected', color: '#dc2626', bg: '#fef2f2', icon: '✗' },
+      0: { label: 'Pending Approval',          color: '#d97706', bg: '#fef3c7', icon: '⏳' },
+      1: { label: 'Branch Manager Approved',   color: '#2563eb', bg: '#eff6ff', icon: '✓'  },
+      2: { label: 'Engineering Manager Approved', color: '#059669', bg: '#ecfdf5', icon: '✓✓' },
+      3: { label: 'Assigned to Engineer',      color: '#7c3aed', bg: '#f5f3ff', icon: '👷' },
+      4: { label: 'Estimated',                 color: '#0891b2', bg: '#ecfeff', icon: '💰' },
+      5: { label: 'Rejected',                  color: '#dc2626', bg: '#fef2f2', icon: '✗'  },
     };
-    const c = config[status] || config[0];
+
+    // Fallback for any future status values added on the backend
+    const c = config[status] ?? { label: `Status ${status}`, color: '#64748b', bg: '#f1f5f9', icon: '?' };
     const chip = (
       <Chip
         label={`${c.icon} ${c.label}`}

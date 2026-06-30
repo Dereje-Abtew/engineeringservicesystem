@@ -166,13 +166,13 @@ namespace backend.Services
                 await _context.SaveChangesAsync();
             }
 
-            // Notify Checkers that a new request has been submitted. Target role: Checker
+            // Notify Manager that a new request has been submitted by Branch Manager
             try
             {
                 backend.Services.NotificationCenter.Create(
                     "New Estimation Request",
-                    $"Request #{request.Id} submitted and awaiting Checker review.",
-                    new[] { "Checker" },
+                    $"Request #{request.Id} submitted by Branch Manager and awaiting Engineering Manager review.",
+                    new[] { "EngineeringManager" },
                     Array.Empty<string>());
             }
             catch { /* Swallow notification errors to not break request creation */ }
@@ -193,13 +193,13 @@ namespace backend.Services
 
             await _context.SaveChangesAsync();
 
-            // Notify Managers that Checker approved and request is ready for Manager
+            // Notify Manager that Branch Manager approved and request is ready for Manager action
             try
             {
                 backend.Services.NotificationCenter.Create(
-                    "Request Approved by Checker",
-                    $"Request #{request.Id} was approved by Checker and is awaiting Manager action.",
-                    new[] { "Manager" },
+                    "Request Approved by Branch Manager",
+                    $"Request #{request.Id} was approved by Branch Manager and is awaiting Engineering Manager action.",
+                    new[] { "EngineeringManager" },
                     Array.Empty<string>());
             }
             catch { }
@@ -221,19 +221,19 @@ namespace backend.Services
             // audit trail is preserved even after the maker edits & resends.
             request.LastRejectionReason = dto.CheckerReason;
             request.LastRejectionDate = dto.CheckerRejectionDate;
-            request.LastRejectionBy = "Checker";
+            request.LastRejectionBy = "Branch Manager";
 
             await _context.SaveChangesAsync();
 
-            // Notify the maker about rejection with reason
+            // Notify the branch manager about rejection with reason
             try
             {
                 var makerId = request.BranchUserId;
-                var msg = $"Your request #{request.Id} was rejected by Checker. Reason: {dto.CheckerReason}";
+                var msg = $"Your request #{request.Id} was rejected by Engineering Manager. Reason: {dto.CheckerReason}";
                 backend.Services.NotificationCenter.Create(
-                    "Request Rejected by Checker",
+                    "Request Rejected by Engineering Manager",
                     msg,
-                    new[] { "Maker" },
+                    new[] { "BranchManager" },
                     string.IsNullOrEmpty(makerId) ? Array.Empty<string>() : new[] { makerId });
             }
             catch { }
@@ -246,7 +246,8 @@ namespace backend.Services
             var request = await _context.EstimationRequests.FindAsync(id);
             if (request == null) return false;
 
-            if (request.Status != RequestStatus.CheckerApproved) return false;
+            // Accept both Pending (0) — direct from BranchManager — and CheckerApproved (1) legacy
+            if (request.Status != RequestStatus.Pending && request.Status != RequestStatus.CheckerApproved) return false;
 
             request.Status = RequestStatus.ManagerApproved;
             request.ManagerActionDate = dto.ManagerApprovalDate;
@@ -258,8 +259,8 @@ namespace backend.Services
             try
             {
                 backend.Services.NotificationCenter.Create(
-                    "Request Approved by Manager",
-                    $"Request #{request.Id} was approved by Manager and is ready for engineering assignment.",
+                    "Request Approved by Engineering Manager",
+                    $"Request #{request.Id} was approved by Engineering Manager and is ready for engineering assignment.",
                     new[] { "Engineer" },
                     Array.Empty<string>());
             }
@@ -273,28 +274,27 @@ namespace backend.Services
             var request = await _context.EstimationRequests.FindAsync(id);
             if (request == null) return false;
 
-            if (request.Status != RequestStatus.CheckerApproved) return false;
+            // Accept both Pending (0) — direct from BranchManager — and CheckerApproved (1) legacy
+            if (request.Status != RequestStatus.Pending && request.Status != RequestStatus.CheckerApproved) return false;
 
             request.Status = RequestStatus.Rejected;
             request.ManagerActionDate = dto.ManagerRejectionDate;
             request.ManagerRejectionReason = dto.ManagerReason;
-            // Track the most-recent rejection on top-level fields so the
-            // audit trail is preserved even after the maker edits & resends.
             request.LastRejectionReason = dto.ManagerReason;
             request.LastRejectionDate = dto.ManagerRejectionDate;
-            request.LastRejectionBy = "Manager";
+            request.LastRejectionBy = "Engineering Manager";
 
             await _context.SaveChangesAsync();
 
-            // Notify the maker about manager rejection
+            // Notify the Branch Manager (creator) about manager rejection
             try
             {
                 var makerId = request.BranchUserId;
-                var msg = $"Your request #{request.Id} was rejected by Manager. Reason: {dto.ManagerReason}";
+                var msg = $"Your request #{request.Id} was rejected by Engineering Manager. Reason: {dto.ManagerReason}";
                 backend.Services.NotificationCenter.Create(
-                    "Request Rejected by Manager",
+                    "Request Rejected by Engineering Manager",
                     msg,
-                    new[] { "Maker" },
+                    new[] { "BranchManager" },
                     string.IsNullOrEmpty(makerId) ? Array.Empty<string>() : new[] { makerId });
             }
             catch { }
@@ -326,7 +326,7 @@ namespace backend.Services
                 backend.Services.NotificationCenter.Create(
                     "Request Rejected by Engineer",
                     msg,
-                    new[] { "Maker" },
+                    new[] { "BranchManager" },
                     string.IsNullOrEmpty(makerId) ? Array.Empty<string>() : new[] { makerId });
             }
             catch { }
@@ -533,8 +533,8 @@ namespace backend.Services
                 var fullName = $"{engineerName} {engineerLastName}".Trim();
                 backend.Services.NotificationCenter.Create(
                     "Estimation Report Submitted",
-                    $"Estimation report for Request #{estimationRequest.Id} has been submitted by {fullName}. Ready for review by Checker and Manager.",
-                    new[] { "Checker", "Manager" },
+                    $"Estimation report for Request #{estimationRequest.Id} has been submitted by {fullName}. Ready for review by Branch Manager and Manager.",
+                    new[] { "BranchManager", "Checker", "Manager" },
                     Array.Empty<string>());
             }
             catch { }
@@ -672,13 +672,13 @@ namespace backend.Services
 
             await _context.SaveChangesAsync();
 
-            // Notify Checkers that the request has been resent
+            // Notify Manager that the request has been resent by Branch Manager
             try
             {
                 backend.Services.NotificationCenter.Create(
                     "Request Resent",
-                    $"Request #{request.Id} has been resent and is awaiting Checker review.",
-                    new[] { "Checker" },
+                    $"Request #{request.Id} has been resent by Branch Manager and is awaiting Engineering Manager review.",
+                    new[] { "EngineeringManager" },
                     Array.Empty<string>());
             }
             catch { }
@@ -738,13 +738,13 @@ namespace backend.Services
 
             await _context.SaveChangesAsync();
 
-            // Notify Checkers that the maker updated a pending request
+            // Notify Manager that a pending request was updated by Branch Manager
             try
             {
                 backend.Services.NotificationCenter.Create(
                     "Request Updated",
-                    $"Request #{request.Id} was updated by the maker and is awaiting Checker review.",
-                    new[] { "Checker" },
+                    $"Request #{request.Id} was updated by Branch Manager and is awaiting Engineering Manager review.",
+                    new[] { "EngineeringManager" },
                     Array.Empty<string>());
             }
             catch { }

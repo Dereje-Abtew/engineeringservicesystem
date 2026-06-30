@@ -43,12 +43,12 @@ interface ResendFormValues {
 
 const SELECTABLE_DOCUMENT_TYPES = new Set<string>(['Estimation Excel', 'Relevant Photo', 'Estimation Report']);
 const statusMap: Record<number, { label: string; bg: string; color: string }> = {
-  0: { label: 'Pending', bg: 'rgba(241, 179, 28, 0.1)', color: '#f1b31c' },
-  1: { label: 'Checker Approved', bg: 'rgba(16, 185, 129, 0.1)', color: '#10b981' },
-  2: { label: 'Manager Approved', bg: 'rgba(16, 185, 129, 0.1)', color: '#10b981' },
-  3: { label: 'Assigned to Engineer', bg: 'rgba(59, 130, 246, 0.1)', color: '#2563eb' },
-  4: { label: 'Estimated', bg: 'rgba(16, 185, 129, 0.1)', color: '#10b981' },
-  5: { label: 'Rejected', bg: 'rgba(254, 226, 226, 0.75)', color: '#dc2626' }
+  0: { label: 'Pending Approval',        bg: 'rgba(241, 179, 28, 0.1)',  color: '#f1b31c' },
+  1: { label: 'Branch Manager Approved', bg: 'rgba(16, 185, 129, 0.1)', color: '#10b981' },
+  2: { label: 'Engineering Manager Approved', bg: 'rgba(16, 185, 129, 0.1)', color: '#10b981' },
+  3: { label: 'Assigned to Engineer',    bg: 'rgba(59, 130, 246, 0.1)', color: '#2563eb' },
+  4: { label: 'Estimated',               bg: 'rgba(16, 185, 129, 0.1)', color: '#10b981' },
+  5: { label: 'Rejected',                bg: 'rgba(254, 226, 226, 0.75)', color: '#dc2626' }
 };
 const BUILDING_TYPE_OPTIONS = ['Condominium', 'Commercial'];
 const PURPOSE_OPTIONS = ['Mortgage', 'Guarantee', 'Loan', 'Foreclosure', 'Project Finance'];
@@ -252,7 +252,7 @@ export default function RequestDetailPage() {
 
   const isRejected = request.status === 5;
   const rejectionReason = request.checkerRejectionReason || request.managerRejectionReason || request.lastRejectionReason;
-  const rejectedBy = request.checkerRejectionReason ? 'Checker' : (request.managerRejectionReason ? 'Manager' : (request.lastRejectionBy ?? null));
+  const rejectedBy = request.checkerRejectionReason ? 'Branch Manager' : (request.managerRejectionReason ? 'Manager' : (request.lastRejectionBy ?? null));
   const rejectionDate = request.checkerActionDate || request.managerActionDate || request.lastRejectionDate;
 
   const hasFinalEstimation = (request.attachments ?? []).some(a => a.documentType === 'Final Estimation');

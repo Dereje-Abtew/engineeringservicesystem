@@ -46,21 +46,28 @@ export function usePermissions() {
   };
 
   const canApproveRequest = (requestStatus: number): boolean => {
-    return hasPermission('Permissions.Requests.Approve') && requestStatus === 0;
+    // Only Manager or Admin can approve at status 0 (pending)
+    const isManagerRole = user?.role === 'EngineeringManager' || user?.role === 'Admin' || user?.role === 'SystemAdmin';
+    return isManagerRole && hasPermission('Permissions.Requests.Approve') && requestStatus === 0;
   };
 
   const canManagerApprove = (requestStatus: number): boolean => {
-    // Manager-level approvals should only be available to users with manager/admin roles
-    const isManagerRole = user?.role === 'Manager' || user?.role === 'Admin' || user?.role === 'SystemAdmin';
+    // Status 1 (CheckerApproved) no longer occurs in the new flow —
+    // Manager acts directly on status 0. Keep for backward compatibility only.
+    const isManagerRole = user?.role === 'EngineeringManager' || user?.role === 'Admin' || user?.role === 'SystemAdmin';
     return isManagerRole && hasPermission('Permissions.Requests.Approve') && requestStatus === 1;
   };
 
   const canRejectRequest = (requestStatus: number): boolean => {
-    return hasPermission('Permissions.Requests.Reject') && requestStatus === 0;
+    // Only Manager or Admin can reject at status 0 (pending)
+    const isManagerRole = user?.role === 'EngineeringManager' || user?.role === 'Admin' || user?.role === 'SystemAdmin';
+    return isManagerRole && hasPermission('Permissions.Requests.Reject') && requestStatus === 0;
   };
 
   const canManagerReject = (requestStatus: number): boolean => {
-    const isManagerRole = user?.role === 'Manager' || user?.role === 'Admin' || user?.role === 'SystemAdmin';
+    // Status 1 (CheckerApproved) no longer occurs in the new flow.
+    // Keep for backward compatibility only.
+    const isManagerRole = user?.role === 'EngineeringManager' || user?.role === 'Admin' || user?.role === 'SystemAdmin';
     return isManagerRole && hasPermission('Permissions.Requests.Reject') && requestStatus === 1;
   };
 

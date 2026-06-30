@@ -14,7 +14,7 @@ namespace backend.Data
         public static async Task Initialize(ApplicationDbContext context, UserManager<ApplicationUser> userManager, RoleManager<IdentityRole> roleManager)
         {
             // Create roles
-            string[] roleNames = { "Admin", "Maker", "Checker", "Manager", "EngineeringOfficer" };
+            string[] roleNames = { "Admin", "EngineeringManager", "EngineeringOfficer", "BranchManager" };
             foreach (var roleName in roleNames)
             {
                 var roleExist = await roleManager.RoleExistsAsync(roleName);
@@ -43,28 +43,26 @@ namespace backend.Data
                 }
                 else if (roleName == "Checker")
                 {
-                    permissionsToAssign.Add(Permissions.DashboardView);
-                    permissionsToAssign.Add(Permissions.RequestsView);
-                    permissionsToAssign.Add(Permissions.RequestsViewBranch);
-                    permissionsToAssign.Add(Permissions.RequestsApprove);
-                    permissionsToAssign.Add(Permissions.RequestsUploadFinalEstimation);
-                    permissionsToAssign.Add(Permissions.RequestsViewFilteredEstimation); // See Estimation Report sent by Engineer
+                    // Legacy role - kept for backward compatibility only, no longer seeded
+                    // Use BranchManager instead
                 }
                 else if (roleName == "Maker")
                 {
-                    permissionsToAssign.Add(Permissions.DashboardView);
-                    permissionsToAssign.Add(Permissions.RequestsView);
-                    permissionsToAssign.Add(Permissions.RequestsViewOwn);
-                    permissionsToAssign.Add(Permissions.RequestsCreate);
+                    // Legacy role - kept for backward compatibility only, no longer seeded
+                    // Use BranchManager instead
                 }
-                else if (roleName == "Manager")
+                else if (roleName == "EngineeringManager")
                 {
                     permissionsToAssign.Add(Permissions.DashboardView);
                     permissionsToAssign.Add(Permissions.RequestsView);
-                    permissionsToAssign.Add(Permissions.RequestsViewAll);
-                    permissionsToAssign.Add(Permissions.RequestsApprove);
-                    permissionsToAssign.Add(Permissions.RequestsUploadFinalEstimation);
-                    permissionsToAssign.Add(Permissions.RequestsViewFilteredEstimation); // See Estimation Report sent by Engineer
+                    permissionsToAssign.Add(Permissions.RequestsViewAll);            // See all requests including pending (status 0)
+                    permissionsToAssign.Add(Permissions.RequestsApprove);            // Approve at status 0 (from BranchManager)
+                    permissionsToAssign.Add(Permissions.RequestsReject);             // Reject at status 0
+                    permissionsToAssign.Add(Permissions.RequestsAssign);             // Assign Engineering Officer
+                    permissionsToAssign.Add(Permissions.RequestsManageEngineersWorkLoad); // Manage workload
+                    permissionsToAssign.Add(Permissions.RequestsUploadFinalEstimation);   // Upload Final Estimation
+                    permissionsToAssign.Add(Permissions.RequestsViewFilteredEstimation);  // See Estimation Report
+                    permissionsToAssign.Add(Permissions.RequestsViewEstimation);          // See full estimation details
                 }
                 else if (roleName == "EngineeringOfficer")
                 {
@@ -73,6 +71,17 @@ namespace backend.Data
                     permissionsToAssign.Add(Permissions.RequestsViewAssigned);
                     permissionsToAssign.Add(Permissions.RequestsEdit);
                     permissionsToAssign.Add(Permissions.RequestsEstimate);
+                }
+                else if (roleName == "BranchManager")
+                {
+                    // Replaces Maker + Checker: creates and manages branch requests only.
+                    // Manager handles all approvals — BranchManager does NOT approve.
+                    permissionsToAssign.Add(Permissions.DashboardView);
+                    permissionsToAssign.Add(Permissions.RequestsView);
+                    permissionsToAssign.Add(Permissions.RequestsViewBranch);         // See all branch requests
+                    permissionsToAssign.Add(Permissions.RequestsCreate);             // Create requests
+                    permissionsToAssign.Add(Permissions.RequestsEdit);               // Edit pending requests
+                    permissionsToAssign.Add(Permissions.RequestsViewFilteredEstimation); // See Estimation Report
                 }
 
                 foreach (var perm in permissionsToAssign)
@@ -115,6 +124,52 @@ namespace backend.Data
             }
 
             await context.SaveChangesAsync();
+
+            // ================================================================
+            // Seed Head Office Department and Branch
+            // Both are created idempotently — safe to run on every startup.
+            // ================================================================
+
+            // 1. Seed the "Head Office" Department
+            var headOfficeDeptName = "Head Office";
+            var headOfficeDept = await context.Departments
+                .FirstOrDefaultAsync(d => d.Name == headOfficeDeptName);
+
+            if (headOfficeDept == null)
+            {
+                headOfficeDept = new Department
+                {
+                    Id = Guid.NewGuid(),
+                    Name = headOfficeDeptName,
+                    Description = "Head Office — central engineering and valuation unit",
+                    IsActive = true,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+                context.Departments.Add(headOfficeDept);
+                await context.SaveChangesAsync();
+            }
+
+            // 2. Seed the "Head Office" Branch linked to the department above
+            var headOfficeBranchName = "Head Office";
+            var headOfficeBranch = await context.Branches
+                .FirstOrDefaultAsync(b => b.Name == headOfficeBranchName);
+
+            if (headOfficeBranch == null)
+            {
+                context.Branches.Add(new Branch
+                {
+                    Id = Guid.NewGuid(),
+                    Name = headOfficeBranchName,
+                    BranchCode = "HO-001",
+                    Location = "Head Office",
+                    IsActive = true,
+                    DepartmentId = headOfficeDept.Id,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                });
+                await context.SaveChangesAsync();
+            }
         }
     }
 }

@@ -534,12 +534,12 @@ const ViewDetailsDialog = ({ open, onClose, request }: { open: boolean; onClose:
   if (!request) return null;
 
   const statusMap: Record<number, { label: string; color: string; bg: string }> = {
-    0: { label: 'Pending Checker', color: '#d97706', bg: '#fef3c7' },
-    1: { label: 'Checker Approved', color: '#2563eb', bg: '#eff6ff' },
-    2: { label: 'Manager Approved', color: '#059669', bg: '#ecfdf5' },
-    3: { label: 'Assigned to Engineer', color: '#7c3aed', bg: '#f5f3ff' },
-    4: { label: 'Estimated', color: '#0891b2', bg: '#ecfeff' },
-    5: { label: 'Rejected', color: '#dc2626', bg: '#fef2f2' }
+    0: { label: 'Pending Approval',        color: '#d97706', bg: '#fef3c7' },
+    1: { label: 'Branch Manager Approved', color: '#2563eb', bg: '#eff6ff' },
+    2: { label: 'Engineering Manager Approved', color: '#059669', bg: '#ecfdf5' },
+    3: { label: 'Assigned to Engineer',    color: '#7c3aed', bg: '#f5f3ff' },
+    4: { label: 'Estimated',               color: '#0891b2', bg: '#ecfeff' },
+    5: { label: 'Rejected',                color: '#dc2626', bg: '#fef2f2' }
   };
 
   return (
@@ -587,7 +587,7 @@ const ViewDetailsDialog = ({ open, onClose, request }: { open: boolean; onClose:
               <Alert severity="info" sx={{ mb: 2, borderRadius: '8px', bgcolor: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd' }}>
                 <Typography variant="body2">
                   Please review the documents. Once the valuation is approved, <strong>upload the Final Estimation</strong>.
-                  After uploading, please <strong>select the Estimation Report checkbox</strong> and click "Send" to send it to the checker and manager.
+                  After uploading, please <strong>select the Estimation Report checkbox</strong> and click "Send" to send it to the Branch Manager and manager.
                 </Typography>
               </Alert>
             </Grid>
@@ -2388,14 +2388,16 @@ export default function RequestsPage() {
         const currentDate = new Date().toISOString();
 
         if (workflowAction === 'checker_approve') {
-          await api.post(`/EstimationRequests/${selectedRow.id}/checker-approve`, {
-            checkerApprovalDate: currentDate,
-            checkerDescription: values.description
+          // Manager approves a Branch Manager's request directly (status 0 → 2)
+          await api.post(`/EstimationRequests/${selectedRow.id}/manager-approve`, {
+            managerApprovalDate: currentDate,
+            managerDescription: values.description
           });
         } else if (workflowAction === 'checker_reject') {
-          await api.post(`/EstimationRequests/${selectedRow.id}/checker-reject`, {
-            checkerRejectionDate: currentDate,
-            checkerReason: values.reason
+          // Manager rejects a Branch Manager's request (status 0 → 5)
+          await api.post(`/EstimationRequests/${selectedRow.id}/manager-reject`, {
+            managerRejectionDate: currentDate,
+            managerReason: values.reason
           });
         } else if (workflowAction === 'manager_approve') {
           await api.post(`/EstimationRequests/${selectedRow.id}/manager-approve`, {

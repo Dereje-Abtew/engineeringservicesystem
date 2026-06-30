@@ -261,8 +261,8 @@ namespace backend.Services
             return status switch
             {
                 RequestStatus.Pending => "Pending",
-                RequestStatus.CheckerApproved => "Checker Approved",
-                RequestStatus.ManagerApproved => "Manager Approved",
+                RequestStatus.CheckerApproved => "Branch Manager Approved",
+                RequestStatus.ManagerApproved => "Engineering Manager Approved",
                 RequestStatus.AssignedToEngineer => "Assigned to Engineer",
                 RequestStatus.Rejected => "Rejected",
                 _ => status.ToString()
