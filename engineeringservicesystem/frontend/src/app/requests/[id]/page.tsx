@@ -22,8 +22,8 @@ interface Attachment { id?: number; fileName: string; fileUrl: string; documentT
 interface EngineeringReport { remarks: string; estimatedValue: number; siteVisitDate: string; }
 interface EstimationRequest {
   id: number; applicantName: string; ownerName: string; location?: string;
-  city: string; subCity: string; kebele: string; typeOfBuilding: string;
-  status: number; createdAt: string; lhuNo: string; plotArea: number;
+  city: string; subCity: string; kebele: string; buildingType: string;
+  status: number; createdAt: string; updatedAt?: string; lhuNo: string; plotArea: number;
   purpose: string; type: string; attachments: Attachment[];
   report?: EngineeringReport; filteredEstimationAttachments?: Attachment[];
   filteredAttachmentIds?: number[]; selectableAttachmentIds?: number[];
@@ -50,9 +50,9 @@ const statusMap: Record<number, { label: string; bg: string; color: string }> = 
   4: { label: 'Estimated',               bg: 'rgba(16, 185, 129, 0.1)', color: '#10b981' },
   5: { label: 'Rejected',                bg: 'rgba(254, 226, 226, 0.75)', color: '#dc2626' }
 };
-const BUILDING_TYPE_OPTIONS = ['Condominium', 'Commercial'];
+const BUILDING_TYPE_OPTIONS = ['Condominium', 'Commercial', 'Residential', 'Industrial', 'Mixed Use'];
 const PURPOSE_OPTIONS = ['Mortgage', 'Guarantee', 'Loan', 'Foreclosure', 'Project Finance'];
-const TYPE_OPTIONS = ['NewEstimation', 'ReEstimation'];
+const TYPE_OPTIONS = ['New Estimation', 'Re-Estimation'];
 
 export default function RequestDetailPage() {
   const { id } = useParams();
@@ -204,8 +204,8 @@ export default function RequestDetailPage() {
       applicantName: request.applicantName ?? '', ownerName: request.ownerName ?? '',
       lhuNo: request.lhuNo ?? '', city: request.city ?? '', subCity: request.subCity ?? '',
       kebele: request.kebele ?? '', plotArea: String(request.plotArea ?? ''),
-      buildingType: request.typeOfBuilding ?? 'Condominium', purpose: request.purpose ?? 'Mortgage',
-      type: request.type ?? 'NewEstimation', projectFinanceDocType: request.projectFinanceDocType ?? '',
+      buildingType: request.buildingType ?? 'Condominium', purpose: request.purpose ?? 'Mortgage',
+      type: request.type ?? 'New Estimation', projectFinanceDocType: request.projectFinanceDocType ?? '',
       billOfPenalty: request.billOfPenalty ?? false, makerRemark: '',
     });
     setResendOpen(true);
@@ -275,6 +275,11 @@ export default function RequestDetailPage() {
                 <Chip label={statusMap[request.status]?.label ?? `Status ${request.status}`}
                   sx={{ bgcolor: statusMap[request.status]?.bg ?? 'rgba(241, 241, 241, 0.9)', color: statusMap[request.status]?.color ?? '#334155', fontWeight: 800, borderRadius: '8px' }} />
                 <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 600 }}>Submitted on {new Date(request.createdAt).toLocaleDateString()}</Typography>
+                {request.updatedAt && (
+                  <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 600 }}>
+                    · Last updated {new Date(request.updatedAt).toLocaleDateString()}
+                  </Typography>
+                )}
                 {(request.resendCount ?? 0) > 0 && (
                   <Chip icon={<History size={14} />} label={`Resent ${request.resendCount}x`} size="small"
                     sx={{ bgcolor: 'rgba(8, 145, 178, 0.1)', color: '#0e7490', fontWeight: 700 }} />
@@ -352,6 +357,11 @@ export default function RequestDetailPage() {
                     <MapPin size={18} color="#f1b31c" />
                     <Typography variant="h6" fontWeight="700" sx={{ color: '#0f172a' }}>{request.location || `${request.city}, ${request.subCity}, Kebele ${request.kebele}`}</Typography>
                   </Box>
+                  {request.updatedAt && (
+                    <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', mt: 0.5, fontWeight: 600 }}>
+                      Last updated {new Date(request.updatedAt).toLocaleString()}
+                    </Typography>
+                  )}
                 </Grid>
                 <Grid size={{ xs: 12, sm: 6 }}>
                   <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px' }}>Plot Area</Typography>
@@ -359,7 +369,7 @@ export default function RequestDetailPage() {
                 </Grid>
                 <Grid size={{ xs: 12, sm: 6 }}>
                   <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px' }}>Building</Typography>
-                  <Typography variant="h6" fontWeight="700" sx={{ color: '#0f172a' }}>{request.typeOfBuilding}</Typography>
+                  <Typography variant="h6" fontWeight="700" sx={{ color: '#0f172a' }}>{request.buildingType}</Typography>
                 </Grid>
                 <Grid size={{ xs: 12, sm: 6 }}>
                   <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px' }}>Purpose</Typography>

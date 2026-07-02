@@ -105,30 +105,9 @@ namespace backend.Services
 
         public async Task<EstimationRequestResponseDto> CreateRequestAsync(CreateEstimationRequestDto dto, string userId)
         {
-            var buildingType = dto.BuildingType?.ToLower() switch
-            {
-                "condominium" => TypeOfBuilding.Condominium,
-                "commercial" => TypeOfBuilding.Commercial,
-                _ => TypeOfBuilding.Condominium
-            };
-
-            var purpose = dto.Purpose?.ToLower() switch
-            {
-                "mortgage" => PurposeOfEstimation.Mortgage,
-                "guarantee" => PurposeOfEstimation.Guarantee,
-                "loan" => PurposeOfEstimation.Loan,
-                "foreclosure" => PurposeOfEstimation.Foreclosure,
-                "project finance" => PurposeOfEstimation.ProjectFinance,
-                _ => PurposeOfEstimation.Mortgage
-            };
-
-            var type = dto.Type?.ToLower() switch
-            {
-                "newestimation" => TypeOfEstimation.NewEstimation,
-                "reestimation" => TypeOfEstimation.ReEstimation,
-                _ => TypeOfEstimation.NewEstimation
-            };
-
+            var buildingType = ParseBuildingType(dto.BuildingType, TypeOfBuilding.Condominium);
+            var purpose = ParsePurpose(dto.Purpose, PurposeOfEstimation.Mortgage);
+            var type = ParseEstimationType(dto.Type, TypeOfEstimation.NewEstimation);
             var request = new EstimationRequest
             {
                 ApplicantName = dto.ApplicantName,
@@ -623,6 +602,15 @@ namespace backend.Services
             if (request.Status != RequestStatus.Rejected)
                 return (false, "Only rejected requests can be resent");
 
+            // LHC uniqueness check — allow the same LHC as long as it belongs to THIS request.
+            if (!string.IsNullOrWhiteSpace(dto.LHUNo) && !dto.LHUNo.Equals(request.LHUNo, StringComparison.OrdinalIgnoreCase))
+            {
+                var lhcConflict = await _context.EstimationRequests
+                    .AnyAsync(r => r.LHUNo.ToLower() == dto.LHUNo.ToLower() && r.Id != id);
+                if (lhcConflict)
+                    return (false, "LHC number already exists. Please enter a unique LHC number.");
+            }
+
             // Update the editable fields with the new data from the maker.
             request.ApplicantName = dto.ApplicantName;
             request.OwnerName = dto.OwnerName;
@@ -630,37 +618,18 @@ namespace backend.Services
             request.City = dto.City;
             request.SubCity = dto.SubCity;
             request.Kebele = dto.Kebele;
-            request.Latitude = dto.Latitude;
-            request.Longitude = dto.Longitude;
             request.PlotArea = dto.PlotArea;
 
-            request.BuildingType = dto.BuildingType?.ToLower() switch
-            {
-                "condominium" => TypeOfBuilding.Condominium,
-                "commercial" => TypeOfBuilding.Commercial,
-                _ => request.BuildingType
-            };
-            request.Purpose = dto.Purpose?.ToLower() switch
-            {
-                "mortgage" => PurposeOfEstimation.Mortgage,
-                "guarantee" => PurposeOfEstimation.Guarantee,
-                "loan" => PurposeOfEstimation.Loan,
-                "foreclosure" => PurposeOfEstimation.Foreclosure,
-                "project finance" => PurposeOfEstimation.ProjectFinance,
-                _ => request.Purpose
-            };
-            request.Type = dto.Type?.ToLower() switch
-            {
-                "newestimation" => TypeOfEstimation.NewEstimation,
-                "reestimation" => TypeOfEstimation.ReEstimation,
-                _ => request.Type
-            };
+            request.BuildingType = ParseBuildingType(dto.BuildingType, request.BuildingType);
+            request.Purpose = ParsePurpose(dto.Purpose, request.Purpose);
+            request.Type = ParseEstimationType(dto.Type, request.Type);
 
             request.ProjectFinanceDocType = dto.ProjectFinanceDocType;
             request.BillOfPenalty = dto.BillOfPenalty;
 
-            // Reset status to Pending so the workflow restarts at the Checker.
+            // Reset status to Pending so the workflow restarts.
             request.Status = RequestStatus.Pending;
+            request.UpdatedAt = DateTime.UtcNow;
 
             // Keep the audit trail of the previous rejection on top-level fields
             // so it remains visible after the workflow resumes.
@@ -700,6 +669,15 @@ namespace backend.Services
             if (request.Status != RequestStatus.Pending)
                 return (false, "Only pending requests can be edited");
 
+            // LHC uniqueness check — allow the same LHC as long as it belongs to THIS request.
+            if (!string.IsNullOrWhiteSpace(dto.LHUNo) && !dto.LHUNo.Equals(request.LHUNo, StringComparison.OrdinalIgnoreCase))
+            {
+                var lhcConflict = await _context.EstimationRequests
+                    .AnyAsync(r => r.LHUNo.ToLower() == dto.LHUNo.ToLower() && r.Id != id);
+                if (lhcConflict)
+                    return (false, "LHC number already exists. Please enter a unique LHC number.");
+            }
+
             // Update editable fields without changing workflow status.
             request.ApplicantName = dto.ApplicantName;
             request.OwnerName = dto.OwnerName;
@@ -707,34 +685,15 @@ namespace backend.Services
             request.City = dto.City;
             request.SubCity = dto.SubCity;
             request.Kebele = dto.Kebele;
-            request.Latitude = dto.Latitude;
-            request.Longitude = dto.Longitude;
             request.PlotArea = dto.PlotArea;
 
-            request.BuildingType = dto.BuildingType?.ToLower() switch
-            {
-                "condominium" => TypeOfBuilding.Condominium,
-                "commercial" => TypeOfBuilding.Commercial,
-                _ => request.BuildingType
-            };
-            request.Purpose = dto.Purpose?.ToLower() switch
-            {
-                "mortgage" => PurposeOfEstimation.Mortgage,
-                "guarantee" => PurposeOfEstimation.Guarantee,
-                "loan" => PurposeOfEstimation.Loan,
-                "foreclosure" => PurposeOfEstimation.Foreclosure,
-                "project finance" => PurposeOfEstimation.ProjectFinance,
-                _ => request.Purpose
-            };
-            request.Type = dto.Type?.ToLower() switch
-            {
-                "newestimation" => TypeOfEstimation.NewEstimation,
-                "reestimation" => TypeOfEstimation.ReEstimation,
-                _ => request.Type
-            };
+            request.BuildingType = ParseBuildingType(dto.BuildingType, request.BuildingType);
+            request.Purpose = ParsePurpose(dto.Purpose, request.Purpose);
+            request.Type = ParseEstimationType(dto.Type, request.Type);
 
             request.ProjectFinanceDocType = dto.ProjectFinanceDocType;
             request.BillOfPenalty = dto.BillOfPenalty;
+            request.UpdatedAt = DateTime.UtcNow;
 
             await _context.SaveChangesAsync();
 
@@ -751,6 +710,41 @@ namespace backend.Services
 
             return (true, null);
         }
+
+        private static TypeOfBuilding ParseBuildingType(string? value, TypeOfBuilding fallback) =>
+            value?.ToLower() switch
+            {
+                "condominium"  => TypeOfBuilding.Condominium,
+                "commercial"   => TypeOfBuilding.Commercial,
+                "residential"  => TypeOfBuilding.Residential,
+                "industrial"   => TypeOfBuilding.Industrial,
+                "mixed use"    => TypeOfBuilding.MixedUse,
+                "mixeduse"     => TypeOfBuilding.MixedUse,
+                "mixed-use"    => TypeOfBuilding.MixedUse,
+                _              => fallback
+            };
+
+        private static PurposeOfEstimation ParsePurpose(string? value, PurposeOfEstimation fallback) =>
+            value?.ToLower() switch
+            {
+                "mortgage"       => PurposeOfEstimation.Mortgage,
+                "guarantee"      => PurposeOfEstimation.Guarantee,
+                "loan"           => PurposeOfEstimation.Loan,
+                "foreclosure"    => PurposeOfEstimation.Foreclosure,
+                "project finance"=> PurposeOfEstimation.ProjectFinance,
+                "projectfinance" => PurposeOfEstimation.ProjectFinance,
+                _                => fallback
+            };
+
+        private static TypeOfEstimation ParseEstimationType(string? value, TypeOfEstimation fallback) =>
+            value?.ToLower() switch
+            {
+                "newestimation"  => TypeOfEstimation.NewEstimation,
+                "new estimation" => TypeOfEstimation.NewEstimation,
+                "reestimation"   => TypeOfEstimation.ReEstimation,
+                "re-estimation"  => TypeOfEstimation.ReEstimation,
+                _                => fallback
+            };
 
         private EstimationRequestResponseDto MapToResponseDto(EstimationRequest request)
         {
@@ -832,11 +826,25 @@ namespace backend.Services
                 Latitude = request.Latitude,
                 Longitude = request.Longitude,
                 PlotArea = request.PlotArea,
-                BuildingType = request.BuildingType.ToString(),
+                BuildingType = request.BuildingType switch
+                {
+                    TypeOfBuilding.Condominium => "Condominium",
+                    TypeOfBuilding.Commercial  => "Commercial",
+                    TypeOfBuilding.Residential => "Residential",
+                    TypeOfBuilding.Industrial  => "Industrial",
+                    TypeOfBuilding.MixedUse    => "Mixed Use",
+                    _                          => request.BuildingType.ToString()
+                },
                 Purpose = request.Purpose == PurposeOfEstimation.ProjectFinance ? "Project Finance" : request.Purpose.ToString(),
-                Type = request.Type.ToString(),
+                Type = request.Type switch
+                {
+                    TypeOfEstimation.NewEstimation => "New Estimation",
+                    TypeOfEstimation.ReEstimation  => "Re-Estimation",
+                    _                              => request.Type.ToString()
+                },
                 Status = (int)request.Status,
                 CreatedAt = request.CreatedAt,
+                UpdatedAt = request.UpdatedAt,
                 BranchUserId = request.BranchUserId,
                 BranchUserName = request.BranchUser != null
                     ? $"{request.BranchUser.FirstName ?? string.Empty} {request.BranchUser.LastName ?? string.Empty}".Trim()

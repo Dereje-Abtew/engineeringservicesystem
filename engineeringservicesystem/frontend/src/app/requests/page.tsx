@@ -1318,7 +1318,7 @@ const EthiopianLocationSelectors = ({ formik }: EthiopianLocationSelectorsProps)
       <Box sx={{ minWidth: 0, width: '100%' }}>
         <Autocomplete
           freeSolo
-          disabled={!formik.values.region}
+          disabled={!formik.values.region && !formik.values.city}
           options={cityOptions}
           getOptionLabel={(option) => typeof option === 'string' ? option : option.name}
           filterOptions={cityFilterOptions}
@@ -1403,7 +1403,7 @@ const EthiopianLocationSelectors = ({ formik }: EthiopianLocationSelectorsProps)
       <Box sx={{ minWidth: 0, width: '100%' }}>
         <Autocomplete
           freeSolo
-          disabled={!formik.values.subCity}
+          disabled={!formik.values.city}
           options={kebeleOptions}
           filterOptions={kebeleFilterOptions}
           value={formik.values.kebele || ''}
@@ -2038,9 +2038,15 @@ export default function RequestsPage() {
     setIsCheckingLHU(true);
     try {
       const existing = await api.get<EstimationRequest[]>('/EstimationRequests', { silent: true });
+      const currentRequest = currentRequestId ? existing.find(r => r.id === currentRequestId) : null;
+      if (currentRequest && currentRequest.lhuNo?.trim().toLowerCase() === lhuNo.trim().toLowerCase()) {
+        setLhuError(null);
+        return true; // Not a duplicate if it matches the current request's original LHC
+      }
+
       const duplicate = existing.some(r =>
-        r.lhuNo?.toLowerCase() === lhuNo.toLowerCase() &&
-        (currentRequestId ? r.id !== currentRequestId : true)
+        r.lhuNo?.trim().toLowerCase() === lhuNo.trim().toLowerCase() &&
+        (currentRequestId != null ? r.id !== currentRequestId : true)
       );
       setLhuError(duplicate ? 'LHC number already exists. Please enter a unique LHC number.' : null);
       return !duplicate;
@@ -2221,13 +2227,20 @@ export default function RequestsPage() {
 
   const submitRequest = async () => {
     setOpenConfirm(false);
-    const missingDocuments = getMissingDocumentTypes();
-    if (missingDocuments.length > 0) {
-      setSubmitError(`Please upload all required documents: ${missingDocuments.join(', ')}.`);
-      return;
+    // In edit or resend mode the documents were already uploaded on creation;
+    // skip the missing-document check so existing attachments are not re-required.
+    if (!isResendMode && !isRequestEditMode) {
+      const missingDocuments = getMissingDocumentTypes();
+      if (missingDocuments.length > 0) {
+        setSubmitError(`Please upload all required documents: ${missingDocuments.join(', ')}.`);
+        return;
+      }
     }
 
-    const isUnique = await checkLHU(formik.values.lhuNo, isResendMode ? resendRequestId ?? undefined : undefined);
+    const isUnique = await checkLHU(
+      formik.values.lhuNo,
+      isResendMode ? (resendRequestId ?? undefined) : isRequestEditMode ? (editRequestId ?? undefined) : undefined
+    );
     if (!isUnique) {
       setSubmitError('LHC number already exists. Please enter a unique LHC number.');
       return;
@@ -2335,7 +2348,9 @@ export default function RequestsPage() {
     applicantName: Yup.string().required('Required').min(2),
     ownerName: Yup.string().required('Required').min(2),
     lhuNo: Yup.string().required('Required'),
-    region: Yup.string().required('Required'),
+    // Region is only required for new requests; in edit/resend mode it may be blank
+    // since we only store city/subCity/kebele text (not the region id).
+    region: Yup.string(),
     city: Yup.string().required('Required'),
     subCity: Yup.string().required('Required'),
     kebele: Yup.string().required('Required'),
@@ -2354,12 +2369,15 @@ export default function RequestsPage() {
     initialValues: { applicantName: '', ownerName: '', lhuNo: '', region: '', cityId: '', subCityId: '', kebeleName: '', city: '', subCity: '', kebele: '', plotArea: '', buildingType: '', purpose: '', projectFinanceDocType: '', billOfPenalty: false, type: '' },
     validationSchema: schema,
     onSubmit: () => {
-      const missingDocuments = getMissingDocumentTypes();
-      if (missingDocuments.length > 0) {
-        setSubmitError(`Please upload all required documents: ${missingDocuments.join(', ')}.`);
-      } else {
-        setOpenConfirm(true);
+      // In edit/resend mode documents are already attached — skip the missing-doc check.
+      if (!isResendMode && !isRequestEditMode) {
+        const missingDocuments = getMissingDocumentTypes();
+        if (missingDocuments.length > 0) {
+          setSubmitError(`Please upload all required documents: ${missingDocuments.join(', ')}.`);
+          return;
+        }
       }
+      setOpenConfirm(true);
     },
   });
 
@@ -2913,7 +2931,10 @@ export default function RequestsPage() {
       {/* New Request Dialog */}
       <Dialog open={openDialog} onClose={handleCloseForm} maxWidth="md" fullWidth PaperProps={{ sx: { borderRadius: '16px', maxHeight: '90vh' } }}>
         <DialogTitle sx={{ bgcolor: '#064E3B', color: 'white', fontWeight: 700, py: 2, px: 3, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Box display="flex" alignItems="center" gap={1}><FileText size={20} />New Estimation Request</Box>
+          <Box display="flex" alignItems="center" gap={1}>
+            <FileText size={20} />
+            {isResendMode ? 'Edit & Resend Request' : isRequestEditMode ? 'Edit Estimation Request' : 'New Estimation Request'}
+          </Box>
           <IconButton onClick={handleCloseForm} sx={{ color: 'white' }}><X size={18} /></IconButton>
         </DialogTitle>
         <form onSubmit={formik.handleSubmit}>
@@ -2925,7 +2946,7 @@ export default function RequestsPage() {
               <Grid container spacing={3}>
                 <Grid item xs={12} md={4} sx={{ minWidth: 0 }}><TextField fullWidth label="Applicant Name" name="applicantName" value={formik.values.applicantName} onChange={formik.handleChange} error={formik.touched.applicantName && Boolean(formik.errors.applicantName)} helperText={formik.touched.applicantName && formik.errors.applicantName} required sx={requestInputSx} /></Grid>
                 <Grid item xs={12} md={4} sx={{ minWidth: 0 }}><TextField fullWidth label="Owner Name" name="ownerName" value={formik.values.ownerName} onChange={formik.handleChange} error={formik.touched.ownerName && Boolean(formik.errors.ownerName)} helperText={formik.touched.ownerName && formik.errors.ownerName} required sx={requestInputSx} /></Grid>
-                <Grid item xs={12} md={4} sx={{ minWidth: 0 }}><TextField fullWidth label="LHC Number" name="lhuNo" value={formik.values.lhuNo} onChange={async (e) => { formik.handleChange(e); await checkLHU(e.target.value); }} error={(formik.touched.lhuNo && Boolean(formik.errors.lhuNo)) || Boolean(lhuError)} helperText={(formik.touched.lhuNo && formik.errors.lhuNo) || lhuError} required sx={requestInputSx} InputProps={{ endAdornment: isCheckingLHU && <CircularProgress size={16} /> }} /></Grid>
+                <Grid item xs={12} md={4} sx={{ minWidth: 0 }}><TextField fullWidth label="LHC Number" name="lhuNo" value={formik.values.lhuNo} onChange={async (e) => { formik.handleChange(e); const currentId = isResendMode ? (resendRequestId ?? undefined) : isRequestEditMode ? (editRequestId ?? undefined) : undefined; await checkLHU(e.target.value, currentId); }} error={(formik.touched.lhuNo && Boolean(formik.errors.lhuNo)) || Boolean(lhuError)} helperText={(formik.touched.lhuNo && formik.errors.lhuNo) || lhuError} required sx={requestInputSx} InputProps={{ endAdornment: isCheckingLHU && <CircularProgress size={16} /> }} /></Grid>
                 <Grid item xs={12} md={4} sx={{ minWidth: 0 }}><TextField fullWidth type="number" label="Plot Area (m²)" name="plotArea" value={formik.values.plotArea} onChange={formik.handleChange} error={formik.touched.plotArea && Boolean(formik.errors.plotArea)} helperText={formik.touched.plotArea && formik.errors.plotArea} required sx={requestInputSx} /></Grid>
               </Grid>
             </Paper>

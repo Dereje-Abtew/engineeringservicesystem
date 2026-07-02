@@ -27,6 +27,7 @@ namespace backend.DTOs
         public int Status { get; set; }
 
         public DateTime CreatedAt { get; set; }
+        public DateTime? UpdatedAt { get; set; }
         public string? BranchUserId { get; set; }
         public string? BranchUserName { get; set; }
 

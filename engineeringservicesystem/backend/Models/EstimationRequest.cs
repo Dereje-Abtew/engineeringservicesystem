@@ -15,7 +15,10 @@ public enum PurposeOfEstimation
 public enum TypeOfBuilding
 {
     Condominium,  // 0
-    Commercial    // 1
+    Commercial,   // 1
+    Residential,  // 2
+    Industrial,   // 3
+    MixedUse      // 4
 }
 
 public enum TypeOfEstimation
@@ -54,6 +57,7 @@ public class EstimationRequest
     public TypeOfEstimation Type { get; set; }
     public RequestStatus Status { get; set; } = RequestStatus.Pending;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? UpdatedAt { get; set; }
 
     // Foreign Keys & Relations
     public string? BranchUserId { get; set; }

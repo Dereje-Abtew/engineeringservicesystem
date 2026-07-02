@@ -170,9 +170,16 @@ export default function RequestsTable({
         size: 200,
         accessorFn: (row) => row.location || `${row.subCity || ''}, ${row.kebele || ''}`,
         Cell: ({ row }) => (
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <MapPin size={14} color="#64748b" />
-            <Typography variant="body2">{row.original.location || `${row.original.subCity}, ${row.original.kebele}`}</Typography>
+          <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <MapPin size={14} color="#64748b" />
+              <Typography variant="body2">{row.original.location || `${row.original.subCity}, ${row.original.kebele}`}</Typography>
+            </Box>
+            {(row.original as any).updatedAt && (
+              <Typography variant="caption" sx={{ color: '#94a3b8', ml: 3, mt: 0.5 }}>
+                Updated: {new Date((row.original as any).updatedAt).toLocaleDateString()}
+              </Typography>
+            )}
           </Box>
         )
       },
