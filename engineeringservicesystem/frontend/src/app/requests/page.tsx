@@ -28,7 +28,7 @@ import {
   CheckCircle2
 } from 'lucide-react';
 import { Permissions } from '@/constants/permissions';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/store/store';
 import { usePermissions } from '@/hooks/usePermissions';
 import api from '@/utils/api';
@@ -114,21 +114,29 @@ interface EstimationRequest {
   type: string;
   status: number;
   createdAt: string;
+  updatedAt?: string;
   branchUserId?: string;
   branchId?: string;
+  branchName?: string;
+  branchUserName?: string;
+  branchManagerName?: string;
   officerId?: string;
   engineeringOfficerId?: string;
   assignedEngineerId?: string;
   assignedEngineerName?: string;
+  engineerAssignmentDate?: string;
   estimatedValue?: number;
   valuationDate?: string;
   estimatedBy?: string;
+  // Workflow audit timestamps
   checkerActionDate?: string;
   checkerActionDescription?: string;
   checkerRejectionReason?: string;
   managerActionDate?: string;
   managerActionDescription?: string;
   managerRejectionReason?: string;
+  engineerActionDate?: string;
+  engineerRejectionReason?: string;
   report?: {
     id: number;
     estimatedValue: number;
@@ -142,9 +150,9 @@ interface EstimationRequest {
   lastRejectionReason?: string;
   lastRejectionBy?: string;
   lastRejectionDate?: string;
+  resentAt?: string;
+  resendCount?: number;
   attachments?: Attachment[];
-  // Filtered estimation attachments (populated by the backend for users with
-  // Requests.ViewEstimation or Requests.ViewFilteredEstimation permissions)
   filteredEstimationAttachments?: Attachment[];
   filteredAttachmentIds?: number[];
   selectableAttachmentIds?: number[];
@@ -334,6 +342,129 @@ const PasswordChangeDialog = ({ open, onClose }: { open: boolean; onClose: () =>
 };
 
 // =================================================================
+// Workflow Timeline — single permission controls full visibility
+// Assign "Permissions.WorkflowTimeline.View" to any role to grant
+// them access to the complete audit trail.
+// =================================================================
+
+const fmtDT = (iso?: string) => {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+    + '  ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+};
+
+const TLStep = ({
+  icon, color, bg, label, actor, role, date, note, last = false,
+}: {
+  icon: string; color: string; bg: string;
+  label: string; actor: string; role: string;
+  date?: string; note?: string; last?: boolean;
+}) => (
+  <Box sx={{ display: 'flex', alignItems: 'stretch' }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 44, flexShrink: 0 }}>
+      <Box sx={{
+        width: 36, height: 36, borderRadius: '50%',
+        bgcolor: bg, border: `2px solid ${color}`,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: '0.85rem', boxShadow: `0 0 0 3px ${bg}`,
+      }}>{icon}</Box>
+      {!last && <Box sx={{ width: 2, flex: 1, bgcolor: '#e2e8f0', minHeight: 18, my: 0.5 }} />}
+    </Box>
+    <Box sx={{ flex: 1, pb: last ? 1 : 2.5, pl: 1.5 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', mb: 0.2 }}>
+        <Typography variant="body2" fontWeight="700" sx={{ color }}>{label}</Typography>
+        <Chip label={role} size="small" sx={{ height: 18, fontSize: '0.62rem', bgcolor: bg, color, fontWeight: 700 }} />
+      </Box>
+      <Typography variant="caption" sx={{ color: '#475569', display: 'block', fontWeight: 600 }}>👤 {actor}</Typography>
+      <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', fontFamily: 'monospace' }}>🕐 {fmtDT(date)}</Typography>
+      {note && note !== '—' && (
+        <Box sx={{ mt: 0.7, p: 0.8, borderRadius: '8px', bgcolor: color === '#dc2626' ? '#fef2f2' : '#f8fafc', border: `1px solid ${color === '#dc2626' ? '#fecaca' : '#e2e8f0'}` }}>
+          <Typography variant="caption" sx={{ color: color === '#dc2626' ? '#dc2626' : '#475569', display: 'block' }}>{note}</Typography>
+        </Box>
+      )}
+    </Box>
+  </Box>
+);
+
+const WorkflowTimeline = ({ request }: { request: EstimationRequest }) => {
+  const { hasPermission } = useAuthStore();
+  if (!hasPermission('Permissions.WorkflowTimeline.View')) return null;
+
+  const bm = request.branchManagerName || request.branchUserName || '—';
+
+  type S = { key: string; icon: string; color: string; bg: string; label: string; actor: string; role: string; date?: string; note?: string; };
+  const steps: S[] = [];
+
+  // 1 — Created
+  steps.push({
+    key: 'created', icon: '📝', color: '#2563eb', bg: '#eff6ff', label: 'Request Created', actor: bm, role: 'Branch Manager', date: request.createdAt,
+    note: `Branch: ${request.branchName || '—'} · Type: ${request.type} · LHC: ${request.lhuNo}`
+  });
+
+  // 2 — Updated (before any action)
+  if (request.updatedAt && !request.resentAt && new Date(request.updatedAt).getTime() - new Date(request.createdAt).getTime() > 5000)
+    steps.push({ key: 'updated', icon: '✏️', color: '#7c3aed', bg: '#f5f3ff', label: 'Request Updated', actor: bm, role: 'Branch Manager', date: request.updatedAt, note: 'Details updated before Engineering Manager action' });
+
+  // 3 — Branch Manager rejection
+  if (request.checkerRejectionReason && request.checkerActionDate)
+    steps.push({ key: 'chk_rej', icon: '✗', color: '#dc2626', bg: '#fef2f2', label: 'Rejected by Branch Manager', actor: bm, role: 'Branch Manager', date: request.checkerActionDate, note: `Reason: ${request.checkerRejectionReason}` });
+
+  // 4 — Resent after rejection
+  if (request.resentAt)
+    steps.push({
+      key: 'resent', icon: '🔄', color: '#7c3aed', bg: '#f5f3ff', label: `Request Resent${(request.resendCount ?? 0) > 1 ? ` (×${request.resendCount})` : ''}`, actor: bm, role: 'Branch Manager', date: request.resentAt,
+      note: request.lastRejectionReason ? `Re-submitted after: "${request.lastRejectionReason}" (by ${request.lastRejectionBy ?? '—'})` : 'Re-submitted after rejection'
+    });
+
+  // 5 — Engineering Manager approved
+  if (request.managerActionDate && !request.managerRejectionReason)
+    steps.push({ key: 'mgr_app', icon: '✓✓', color: '#059669', bg: '#ecfdf5', label: 'Approved by Engineering Manager', actor: 'Engineering Manager', role: 'Engineering Manager', date: request.managerActionDate, note: request.managerActionDescription || undefined });
+
+  // 6 — Engineering Manager rejected
+  if (request.managerActionDate && request.managerRejectionReason)
+    steps.push({ key: 'mgr_rej', icon: '✗', color: '#dc2626', bg: '#fef2f2', label: 'Rejected by Engineering Manager', actor: 'Engineering Manager', role: 'Engineering Manager', date: request.managerActionDate, note: `Reason: ${request.managerRejectionReason}` });
+
+  // 7 — Assigned to Engineer
+  if (request.engineerAssignmentDate && request.assignedEngineerName)
+    steps.push({ key: 'assigned', icon: '👷', color: '#7c3aed', bg: '#f5f3ff', label: 'Assigned to Engineer', actor: 'Engineering Manager', role: 'Engineering Manager', date: request.engineerAssignmentDate, note: `Assigned to: ${request.assignedEngineerName}` });
+
+  // 8 — Engineer rejected
+  if (request.engineerActionDate && request.engineerRejectionReason)
+    steps.push({ key: 'eng_rej', icon: '✗', color: '#dc2626', bg: '#fef2f2', label: 'Rejected by Engineer', actor: request.assignedEngineerName || '—', role: 'Engineer', date: request.engineerActionDate, note: `Reason: ${request.engineerRejectionReason}` });
+
+  // 9 — Engineer submitted estimation report (date + time of estimation)
+  const rptDate = (request.engineerActionDate && !request.engineerRejectionReason) ? request.engineerActionDate : request.report?.createdAt;
+  if (rptDate && request.report)
+    steps.push({
+      key: 'report', icon: '📊', color: '#0891b2', bg: '#ecfeff', label: 'Estimation Report Submitted', actor: request.report.assignedEngineerName || request.assignedEngineerName || '—', role: 'Engineer', date: rptDate,
+      note: [`ETB ${request.report.estimatedValue?.toLocaleString()}`, `Site Visit: ${new Date(request.report.siteVisitDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`, request.report.remarks || null].filter(Boolean).join(' · ')
+    });
+
+  // 10 — Engineering Manager uploaded Final Estimation
+  const finalAtt = (request.attachments || []).find(a => a.documentType === 'Final Estimation');
+  if (finalAtt)
+    steps.push({ key: 'final', icon: '📤', color: '#059669', bg: '#ecfdf5', label: 'Final Estimation Uploaded', actor: 'Engineering Manager', role: 'Engineering Manager', date: request.managerActionDate || request.createdAt, note: `File: ${finalAtt.fileName}` });
+
+  const sorted = steps.sort((a, b) => new Date(a.date || 0).getTime() - new Date(b.date || 0).getTime());
+
+  return (
+    <Box sx={{ mt: 2 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '2px solid #064E3B', pb: 1, mb: 2 }}>
+        <Typography variant="subtitle1" fontWeight="700" sx={{ color: '#064E3B' }}>📋 Workflow Timeline</Typography>
+        <Chip label={`${sorted.length} event${sorted.length !== 1 ? 's' : ''}`} size="small" sx={{ height: 20, fontSize: '0.65rem', bgcolor: '#f0fdf4', color: '#059669', fontWeight: 700 }} />
+      </Box>
+      {sorted.length === 0
+        ? <Typography variant="body2" sx={{ color: '#94a3b8', py: 2, textAlign: 'center' }}>No events recorded yet.</Typography>
+        : <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+          {sorted.map((s, i) => <TLStep key={s.key} icon={s.icon} color={s.color} bg={s.bg} label={s.label} actor={s.actor} role={s.role} date={s.date} note={s.note} last={i === sorted.length - 1} />)}
+        </Box>
+      }
+    </Box>
+  );
+};
+
+// =================================================================
 // View Details Dialog Component
 // =================================================================
 
@@ -342,7 +473,6 @@ const ViewDetailsDialog = ({ open, onClose, request }: { open: boolean; onClose:
   const { hasPermission, user } = useAuthStore();
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [loadingAttachments, setLoadingAttachments] = useState(false);
-  // Selected attachment ids for the filtered-estimation send action
   const [selectedFilterIds, setSelectedFilterIds] = useState<number[]>([]);
   const [sendingFilter, setSendingFilter] = useState(false);
   const [filterMessage, setFilterMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -534,12 +664,12 @@ const ViewDetailsDialog = ({ open, onClose, request }: { open: boolean; onClose:
   if (!request) return null;
 
   const statusMap: Record<number, { label: string; color: string; bg: string }> = {
-    0: { label: 'Pending Approval',        color: '#d97706', bg: '#fef3c7' },
+    0: { label: 'Pending Approval', color: '#d97706', bg: '#fef3c7' },
     1: { label: 'Branch Manager Approved', color: '#2563eb', bg: '#eff6ff' },
     2: { label: 'Engineering Manager Approved', color: '#059669', bg: '#ecfdf5' },
-    3: { label: 'Assigned to Engineer',    color: '#7c3aed', bg: '#f5f3ff' },
-    4: { label: 'Estimated',               color: '#0891b2', bg: '#ecfeff' },
-    5: { label: 'Rejected',                color: '#dc2626', bg: '#fef2f2' }
+    3: { label: 'Assigned to Engineer', color: '#7c3aed', bg: '#f5f3ff' },
+    4: { label: 'Estimated', color: '#0891b2', bg: '#ecfeff' },
+    5: { label: 'Rejected', color: '#dc2626', bg: '#fef2f2' }
   };
 
   return (
@@ -555,6 +685,14 @@ const ViewDetailsDialog = ({ open, onClose, request }: { open: boolean; onClose:
           <Grid item xs={12} md={6}><Typography variant="body2" sx={{ color: '#64748b' }}>Owner Name</Typography><Typography variant="body1" fontWeight="600">{request.ownerName}</Typography></Grid>
           <Grid item xs={12} md={6}><Typography variant="body2" sx={{ color: '#64748b' }}>LHC Number</Typography><Typography variant="body1" fontWeight="600" fontFamily="monospace">{request.lhuNo}</Typography></Grid>
           <Grid item xs={12} md={6}><Typography variant="body2" sx={{ color: '#64748b' }}>Status</Typography><Chip label={statusMap[request.status]?.label} size="small" sx={{ bgcolor: statusMap[request.status]?.bg, color: statusMap[request.status]?.color, fontWeight: 600 }} /></Grid>
+          <Grid item xs={12} md={6}>
+            <Typography variant="body2" sx={{ color: '#64748b' }}>Branch</Typography>
+            <Typography variant="body1" fontWeight="600">{request.branchName || 'N/A'}</Typography>
+          </Grid>
+          <Grid item xs={12} md={6}>
+            <Typography variant="body2" sx={{ color: '#64748b' }}>Branch Manager</Typography>
+            <Typography variant="body1" fontWeight="600">{request.branchManagerName || request.branchUserName || 'N/A'}</Typography>
+          </Grid>
           {request.lastRejectionReason && (
             <Grid item xs={12}>
               <Typography variant="body2" sx={{ color: '#64748b' }}>Last Rejection</Typography>
@@ -619,9 +757,9 @@ const ViewDetailsDialog = ({ open, onClose, request }: { open: boolean; onClose:
                           const isFinalEstimation = att.documentType === 'Final Estimation';
                           const isEstimationReport = att.documentType === 'Estimation Report';
                           const isDisabledReport = isEstimationReport && !hasFinalEstimation;
-                          
+
                           if (isFinalEstimation && !canViewFinalEstimation(user?.id) && !canViewFinalEstimationAsUploader(att)) return null;
-                          
+
                           return (
                             <Grid item xs={12} sm={6} key={att.id || idx}>
                               <Card sx={{
@@ -795,6 +933,12 @@ const ViewDetailsDialog = ({ open, onClose, request }: { open: boolean; onClose:
             </>
           ) : null
           }
+
+          {/* ── Workflow Timeline ── */}
+          <Grid item xs={12}>
+            <WorkflowTimeline request={request} />
+          </Grid>
+
         </Grid>
       </DialogContent>
       <DialogActions sx={{ p: 3, bgcolor: '#f8fafc', borderTop: '1px solid #e2e8f0' }}>
@@ -1272,7 +1416,7 @@ const EthiopianLocationSelectors = ({ formik }: EthiopianLocationSelectorsProps)
   };
 
   const normalizeString = (str: string) => str ? str.toLowerCase().replace(/[aeiou\s-]/g, '') : '';
-  
+
   const createFuzzyFilter = <T extends { id?: string; name: string } | string>() => (
     options: T[],
     state: { inputValue: string }
@@ -1342,8 +1486,8 @@ const EthiopianLocationSelectors = ({ formik }: EthiopianLocationSelectorsProps)
             formik.setFieldValue('kebeleName', ''); formik.setFieldValue('kebele', '');
           }}
           onInputChange={(e, newInputValue) => {
-             // allow typing custom cities without matching an option
-             formik.setFieldValue('city', newInputValue);
+            // allow typing custom cities without matching an option
+            formik.setFieldValue('city', newInputValue);
           }}
           renderInput={(params) => (
             <TextField
@@ -1384,7 +1528,7 @@ const EthiopianLocationSelectors = ({ formik }: EthiopianLocationSelectorsProps)
             formik.setFieldValue('kebeleName', ''); formik.setFieldValue('kebele', '');
           }}
           onInputChange={(e, newInputValue) => {
-             formik.setFieldValue('subCity', newInputValue);
+            formik.setFieldValue('subCity', newInputValue);
           }}
           renderInput={(params) => (
             <TextField
@@ -1409,8 +1553,8 @@ const EthiopianLocationSelectors = ({ formik }: EthiopianLocationSelectorsProps)
           value={formik.values.kebele || ''}
           onChange={handleKebele}
           onInputChange={(e, newInputValue) => {
-             formik.setFieldValue('kebeleName', newInputValue);
-             formik.setFieldValue('kebele', newInputValue);
+            formik.setFieldValue('kebeleName', newInputValue);
+            formik.setFieldValue('kebele', newInputValue);
           }}
           renderInput={(params) => (
             <TextField
@@ -1642,10 +1786,47 @@ const AnimatedRecommendationCard = ({
 // Main RequestsPage Component
 // =================================================================
 
-export default function RequestsPage() {
+// Force dynamic rendering to support useSearchParams
+export const dynamic = 'force-dynamic';
+
+// Inner component that reads search params (must be inside Suspense)
+function RequestsPageInner() {
+  const searchParams = useSearchParams();
+  const [highlightId, setHighlightId] = React.useState<number | null>(null);
+
+  useEffect(() => {
+    const raw = searchParams.get('highlight');
+    if (raw) {
+      const id = parseInt(raw, 10);
+      if (!isNaN(id)) setHighlightId(id);
+      // Clean the URL without a full navigation
+      const url = new URL(window.location.href);
+      url.searchParams.delete('highlight');
+      window.history.replaceState({}, '', url.toString());
+    }
+  }, [searchParams]);
+
+  return <RequestsPage highlightIdFromUrl={highlightId} />;
+}
+
+export default function RequestsPageWrapper() {
+  return (
+    <React.Suspense fallback={null}>
+      <RequestsPageInner />
+    </React.Suspense>
+  );
+}
+
+function RequestsPage({ highlightIdFromUrl }: { highlightIdFromUrl?: number | null }) {
   const { user, notify } = useAuthStore();
   const { hasPermission, canCreateRequest, canEditRequest, canApproveRequest, canManagerApprove, canRejectRequest, canManagerReject, canAssignRequest, canManageWorkload, canEstimateRequest, canEditEstimation, canEngineerReject } = usePermissions();
   const router = useRouter();
+
+  // highlightId comes from parent (read from URL ?highlight=<id>)
+  const [highlightId, setHighlightId] = useState<number | null>(highlightIdFromUrl ?? null);
+  useEffect(() => {
+    if (highlightIdFromUrl) setHighlightId(highlightIdFromUrl);
+  }, [highlightIdFromUrl]);
 
   const [data, setData] = useState<EstimationRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1670,6 +1851,7 @@ export default function RequestsPage() {
   const [manageRequestsForOfficer, setManageRequestsForOfficer] = useState<EngOfficer | null>(null);
   const [tabValue, setTabValue] = useState(0);
   const [isCheckingLHU, setIsCheckingLHU] = useState(false);
+  const [showTimeline, setShowTimeline] = useState(false);
   const [lhuError, setLhuError] = useState<string | null>(null);
   const [selectedOfficerId, setSelectedOfficerId] = useState<string>('');
   const [assigning, setAssigning] = useState(false);
@@ -1677,6 +1859,10 @@ export default function RequestsPage() {
   const [requestToReassign, setRequestToReassign] = useState<EstimationRequest | null>(null);
   const [selectedNewOfficerId, setSelectedNewOfficerId] = useState<string>('');
   const requiredDocumentTypes = ['Estimation Fee', 'Land Deed', 'Floor Plan'];
+
+  // Re-Estimation LHC duplicate warning state
+  const [reEstimationWarningOpen, setReEstimationWarningOpen] = useState(false);
+  const [reEstimationFirstDate, setReEstimationFirstDate] = useState<string | null>(null);
 
   // =================================================================
   // Data Fetching Functions
@@ -2034,23 +2220,32 @@ export default function RequestsPage() {
   };
 
   const checkLHU = useCallback(async (lhuNo: string, currentRequestId?: number) => {
-    if (!lhuNo?.trim()) { setLhuError(null); return true; }
+    if (!lhuNo?.trim()) { setLhuError(null); return { isUnique: true }; }
     setIsCheckingLHU(true);
     try {
-      const existing = await api.get<EstimationRequest[]>('/EstimationRequests', { silent: true });
-      const currentRequest = currentRequestId ? existing.find(r => r.id === currentRequestId) : null;
-      if (currentRequest && currentRequest.lhuNo?.trim().toLowerCase() === lhuNo.trim().toLowerCase()) {
+      const result = await api.get<{ exists: boolean; firstEstimationDate?: string; lhcNo?: string }>(
+        `/EstimationRequests/check-lhc?lhcNo=${encodeURIComponent(lhuNo.trim())}`,
+        { silent: true }
+      );
+
+      if (!result.exists) {
         setLhuError(null);
-        return true; // Not a duplicate if it matches the current request's original LHC
+        return { isUnique: true };
       }
 
-      const duplicate = existing.some(r =>
-        r.lhuNo?.trim().toLowerCase() === lhuNo.trim().toLowerCase() &&
-        (currentRequestId != null ? r.id !== currentRequestId : true)
-      );
-      setLhuError(duplicate ? 'LHC number already exists. Please enter a unique LHC number.' : null);
-      return !duplicate;
-    } catch { return true; }
+      // If editing current request with same LHC, allow it
+      if (currentRequestId) {
+        const existing = await api.get<EstimationRequest[]>('/EstimationRequests', { silent: true });
+        const currentRequest = existing.find(r => r.id === currentRequestId);
+        if (currentRequest && currentRequest.lhuNo?.trim().toLowerCase() === lhuNo.trim().toLowerCase()) {
+          setLhuError(null);
+          return { isUnique: true };
+        }
+      }
+
+      // Duplicate exists — check if Re-Estimation type is selected
+      return { isUnique: false, firstEstimationDate: result.firstEstimationDate };
+    } catch { return { isUnique: true }; }
     finally { setIsCheckingLHU(false); }
   }, []);
 
@@ -2237,19 +2432,32 @@ export default function RequestsPage() {
       }
     }
 
-    const isUnique = await checkLHU(
+    const lhuCheckResult = await checkLHU(
       formik.values.lhuNo,
       isResendMode ? (resendRequestId ?? undefined) : isRequestEditMode ? (editRequestId ?? undefined) : undefined
     );
-    if (!isUnique) {
-      setSubmitError('LHC number already exists. Please enter a unique LHC number.');
-      return;
+
+    if (!lhuCheckResult.isUnique) {
+      // Check if this is a Re-Estimation
+      const isReEstimation = formik.values.type === 'Re-Estimation';
+      if (isReEstimation) {
+        // Show confirmation dialog for duplicate LHC on Re-Estimation
+        setReEstimationFirstDate(lhuCheckResult.firstEstimationDate || null);
+        setReEstimationWarningOpen(true);
+        return; // Wait for user confirmation
+      } else {
+        setSubmitError('LHC number already exists. Please enter a unique LHC number.');
+        return;
+      }
     }
 
+    await doActualSubmit();
+  };
+
+  const doActualSubmit = async () => {
     try {
       if (isRequestEditMode && editRequestId) {
         setSubmitting(true);
-        // Update existing request (edit before checker acts)
         await api.put(`/EstimationRequests/${editRequestId}`, {
           applicantName: formik.values.applicantName.trim(),
           ownerName: formik.values.ownerName.trim(),
@@ -2520,11 +2728,19 @@ export default function RequestsPage() {
           <Typography variant="h4" fontWeight="700" sx={{ color: '#064E3B' }}>Estimation Requests</Typography>
           <Typography variant="body2" sx={{ color: '#64748b' }}>Manage and track all engineering valuation requests.</Typography>
         </Box>
-        {mounted && canCreateRequest() && (
-          <Button onClick={handleOpenForm} variant="contained" startIcon={<Plus size={18} />} sx={{ bgcolor: '#064E3B' }}>
-            New Request
-          </Button>
-        )}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          {mounted && hasPermission('Permissions.Requests.ViewAll') && (
+            <FormControlLabel
+              control={<Checkbox checked={showTimeline} onChange={(e) => setShowTimeline(e.target.checked)} sx={{ color: '#064E3B', '&.Mui-checked': { color: '#064E3B' } }} />}
+              label={<Typography variant="body2" sx={{ fontWeight: 600, color: '#334155' }}>Show Timeline</Typography>}
+            />
+          )}
+          {mounted && canCreateRequest() && (
+            <Button onClick={handleOpenForm} variant="contained" startIcon={<Plus size={18} />} sx={{ bgcolor: '#064E3B' }}>
+              New Request
+            </Button>
+          )}
+        </Box>
       </Box>
 
       <RequestsTable
@@ -2532,6 +2748,8 @@ export default function RequestsPage() {
         loading={loading}
         currentUserId={user?.id || ''}
         currentBranchId={user?.branchId}
+        highlightId={highlightId}
+        showTimeline={showTimeline}
         onMenuOpen={handleMenuOpen}
         onViewDetails={handleView}
       />
@@ -3085,6 +3303,53 @@ export default function RequestsPage() {
           <Button onClick={submitRequest} variant="contained" sx={{ bgcolor: '#064E3B' }}>Yes, Submit Request</Button>
         </DialogActions>
       </Dialog>
+
+      {/* Re-Estimation Duplicate LHC Warning Dialog */}
+      <Dialog
+        open={reEstimationWarningOpen}
+        onClose={() => setReEstimationWarningOpen(false)}
+        PaperProps={{ sx: { borderRadius: '16px', maxWidth: 480 } }}
+      >
+        <DialogTitle sx={{ fontWeight: 700, color: '#b45309', display: 'flex', alignItems: 'center', gap: 1 }}>
+          ⚠️ Duplicate LHC Number Detected
+        </DialogTitle>
+        <DialogContent>
+          <Alert severity="warning" sx={{ mb: 2, borderRadius: '8px' }}>
+            This LHC No has been submitted before.
+          </Alert>
+          <DialogContentText>
+            LHC Number <strong style={{ fontFamily: 'monospace' }}>{formik.values.lhuNo}</strong> was first estimated on{' '}
+            <strong>
+              {reEstimationFirstDate
+                ? new Date(reEstimationFirstDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })
+                : 'an earlier date'}
+            </strong>.
+          </DialogContentText>
+          <DialogContentText sx={{ mt: 1.5 }}>
+            Since this is a <strong>Re-Estimation</strong>, duplicate LHC numbers are allowed. Do you want to proceed?
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button
+            onClick={() => setReEstimationWarningOpen(false)}
+            variant="outlined"
+            color="inherit"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={async () => {
+              setReEstimationWarningOpen(false);
+              await doActualSubmit();
+            }}
+            variant="contained"
+            sx={{ bgcolor: '#b45309', '&:hover': { bgcolor: '#92400e' } }}
+          >
+            Yes, Proceed with Re-Estimation
+          </Button>
+        </DialogActions>
+      </Dialog>
+
     </DashboardLayout>
   );
 }

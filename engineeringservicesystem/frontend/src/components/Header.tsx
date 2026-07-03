@@ -111,7 +111,20 @@ export default function Header({ isCollapsed, setIsCollapsed, currentWidth }: He
             >
               {notifications.length === 0 && <MenuItem disabled sx={{ py: 2, px: 3 }}>No notifications</MenuItem>}
               {notifications.map(n => (
-                <MenuItem key={n.id} onClick={async () => { try { await markAsRead(n.id); handleNotificationsClose(); } catch {} }} sx={{ whiteSpace: 'normal', alignItems: 'flex-start' }}>
+                <MenuItem 
+                  key={n.id} 
+                  onClick={async () => { 
+                    try { 
+                      await markAsRead(n.id); 
+                      handleNotificationsClose(); 
+                      // If notification has requestId, redirect to request detail
+                      if (n.requestId) {
+                        router.push(`/requests?highlight=${n.requestId}`);
+                      }
+                    } catch {} 
+                  }} 
+                  sx={{ whiteSpace: 'normal', alignItems: 'flex-start' }}
+                >
                   <ListItemText primary={<strong style={{ fontSize: '0.95rem' }}>{n.title}</strong>} secondary={<span style={{ fontSize: '0.8rem' }}>{n.message}</span>} />
                 </MenuItem>
               ))}

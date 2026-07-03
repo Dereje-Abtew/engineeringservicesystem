@@ -10,6 +10,8 @@ export interface NotificationItem {
   recommendedUserIds: string[];
   createdAt: string;
   isRead: boolean;
+  requestId?: number;
+  branchId?: string;
 }
 
 export function useNotifications(pollIntervalMs = 15000) {

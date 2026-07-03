@@ -45,6 +45,9 @@ export const Permissions = {
     // Organization Management
     OrgManagementView: "Permissions.OrgManagement.View",
     OrgManagementManage: "Permissions.OrgManagement.Manage",
+
+    // Workflow Timeline — one permission controls full timeline visibility
+    WorkflowTimelineView: "Permissions.WorkflowTimeline.View",
 } as const;
 
 export type PermissionKey = keyof typeof Permissions;

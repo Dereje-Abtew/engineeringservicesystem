@@ -56,6 +56,16 @@ namespace backend.Controllers
             return Ok(result);
         }
 
+        // GET: api/EstimationRequests/check-lhc?lhcNo=xxx
+        [Authorize]
+        [HttpGet("check-lhc")]
+        [ProducesResponseType(StatusCodes.Status200OK, Type = typeof(LhcCheckResultDto))]
+        public async Task<ActionResult<LhcCheckResultDto>> CheckLhc([FromQuery] string lhcNo)
+        {
+            var result = await _requestsService.CheckLhcWithMetadataAsync(lhcNo);
+            return Ok(result);
+        }
+
         // GET: api/EstimationRequests/5
         [Authorize(Policy = Permissions.RequestsView)]
         [HttpGet("{id}")]

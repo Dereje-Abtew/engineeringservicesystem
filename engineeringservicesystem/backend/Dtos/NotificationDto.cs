@@ -12,5 +12,7 @@ namespace backend.DTOs
         public string[] RecommendedUserIds { get; set; } = Array.Empty<string>();
         public DateTime CreatedAt { get; set; }
         public bool IsRead { get; set; }
+        public int? RequestId { get; set; }
+        public string? BranchId { get; set; }
     }
 }

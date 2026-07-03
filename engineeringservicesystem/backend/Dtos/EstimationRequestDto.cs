@@ -30,9 +30,13 @@ namespace backend.DTOs
         public DateTime? UpdatedAt { get; set; }
         public string? BranchUserId { get; set; }
         public string? BranchUserName { get; set; }
+        public string? BranchName { get; set; }
+        public string? BranchId { get; set; }
+        public string? BranchManagerName { get; set; }
 
         public List<AttachmentDto> Attachments { get; set; } = new();
         public int? ReportId { get; set; }
+        public EngineeringReportResponseDto? Report { get; set; }
 
         // Filtered Estimation Attachments
         public List<AttachmentDto> FilteredEstimationAttachments { get; set; } = new();
@@ -168,5 +172,12 @@ namespace backend.DTOs
     {
         [Required] public DateTime EngineerRejectionDate { get; set; }
         [Required] public string EngineerReason { get; set; } = string.Empty;
+    }
+
+    public class LhcCheckResultDto
+    {
+        public bool Exists { get; set; }
+        public DateTime? FirstEstimationDate { get; set; }
+        public string? LhcNo { get; set; }
     }
 }

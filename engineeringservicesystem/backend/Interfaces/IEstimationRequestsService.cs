@@ -53,5 +53,11 @@ namespace backend.Services
 
         // Get historical locations (distinct cities, sub-cities, kebeles from all requests)
         Task<LocationHistoricalDto> GetHistoricalLocationsAsync();
+
+        // Check if an LHC Number already exists
+        Task<bool> CheckLhcExistsAsync(string lhcNo);
+
+        // Get LHC metadata: check if an LHC number already exists and return the first estimation date
+        Task<LhcCheckResultDto> CheckLhcWithMetadataAsync(string lhcNo);
     }
 }

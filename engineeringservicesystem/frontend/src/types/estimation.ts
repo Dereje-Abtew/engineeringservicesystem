@@ -26,6 +26,9 @@ export interface EstimationRequest {
   createdAt: string;
   branchUserId?: string;
   branchUserName?: string;
+  branchName?: string;
+  branchId?: string;
+  branchManagerName?: string;
   assignedEngineerId?: string;
   assignedEngineerName?: string;
   engineerAssignmentDate?: string;
@@ -70,4 +73,10 @@ export interface CreateEstimationRequest {
   purpose: number;
   type: number;
   attachments: AttachmentUpload[];
+}
+
+export interface LhcCheckResult {
+  exists: boolean;
+  firstEstimationDate?: string;
+  lhcNo?: string;
 }

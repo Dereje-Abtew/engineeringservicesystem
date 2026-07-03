@@ -42,6 +42,9 @@ public static class Permissions
     public const string OrgManagementView = "Permissions.OrgManagement.View";
     public const string OrgManagementManage = "Permissions.OrgManagement.Manage";
 
+    // Workflow Timeline — single permission: grant to any role that should see the full audit trail
+    public const string WorkflowTimelineView = "Permissions.WorkflowTimeline.View";
+
     public static List<string> GetAll()
     {
         return new List<string>
@@ -72,6 +75,7 @@ public static class Permissions
             RoleManagementManage,
             OrgManagementView,
             OrgManagementManage,
+            WorkflowTimelineView,
         };
     }
 }

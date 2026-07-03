@@ -31,6 +31,8 @@ namespace backend.Services
         {
             var query = _context.EstimationRequests
                 .Include(e => e.BranchUser)
+                    .ThenInclude(u => u.UserBranch)
+                        .ThenInclude(b => b!.Manager)
                 .Include(e => e.Report)
                 .Include(e => e.Attachments)
                 .Include(e => e.AssignedEngineer)
@@ -89,6 +91,8 @@ namespace backend.Services
         {
             var request = await _context.EstimationRequests
                 .Include(e => e.BranchUser)
+                    .ThenInclude(u => u.UserBranch)
+                        .ThenInclude(b => b!.Manager)
                 .Include(e => e.Report)
                 .Include(e => e.Attachments)
                 .Include(e => e.AssignedEngineer)
@@ -145,14 +149,20 @@ namespace backend.Services
                 await _context.SaveChangesAsync();
             }
 
-            // Notify Manager that a new request has been submitted by Branch Manager
-            try
-            {
+            // Fetch branch info for notification scoping
+            var branchUser = await _context.Users
+                .Include(u => u.UserBranch)
+                .FirstOrDefaultAsync(u => u.Id == userId);
+            var branchId = branchUser?.BranchId?.ToString();
+
+            try {
                 backend.Services.NotificationCenter.Create(
                     "New Estimation Request",
                     $"Request #{request.Id} submitted by Branch Manager and awaiting Engineering Manager review.",
                     new[] { "EngineeringManager" },
-                    Array.Empty<string>());
+                    Array.Empty<string>(),
+                    request.Id,
+                    branchId);
             }
             catch { /* Swallow notification errors to not break request creation */ }
 
@@ -175,11 +185,14 @@ namespace backend.Services
             // Notify Manager that Branch Manager approved and request is ready for Manager action
             try
             {
+                var branchId = await GetBranchIdForRequestAsync(request.BranchUserId);
                 backend.Services.NotificationCenter.Create(
                     "Request Approved by Branch Manager",
                     $"Request #{request.Id} was approved by Branch Manager and is awaiting Engineering Manager action.",
                     new[] { "EngineeringManager" },
-                    Array.Empty<string>());
+                    Array.Empty<string>(),
+                    request.Id,
+                    branchId);
             }
             catch { }
 
@@ -208,12 +221,15 @@ namespace backend.Services
             try
             {
                 var makerId = request.BranchUserId;
+                var branchId = await GetBranchIdForRequestAsync(makerId);
                 var msg = $"Your request #{request.Id} was rejected by Engineering Manager. Reason: {dto.CheckerReason}";
                 backend.Services.NotificationCenter.Create(
                     "Request Rejected by Engineering Manager",
                     msg,
-                    new[] { "BranchManager" },
-                    string.IsNullOrEmpty(makerId) ? Array.Empty<string>() : new[] { makerId });
+                    Array.Empty<string>(), // Specifically targeted, don't broadcast to all branch managers
+                    string.IsNullOrEmpty(makerId) ? Array.Empty<string>() : new[] { makerId },
+                    request.Id,
+                    branchId);
             }
             catch { }
 
@@ -237,11 +253,14 @@ namespace backend.Services
             // Notify Engineers that Manager approved (target role: Engineer)
             try
             {
+                var branchId = await GetBranchIdForRequestAsync(request.BranchUserId);
                 backend.Services.NotificationCenter.Create(
                     "Request Approved by Engineering Manager",
                     $"Request #{request.Id} was approved by Engineering Manager and is ready for engineering assignment.",
                     new[] { "Engineer" },
-                    Array.Empty<string>());
+                    Array.Empty<string>(),
+                    request.Id,
+                    branchId);
             }
             catch { }
 
@@ -269,12 +288,15 @@ namespace backend.Services
             try
             {
                 var makerId = request.BranchUserId;
+                var branchId = await GetBranchIdForRequestAsync(makerId);
                 var msg = $"Your request #{request.Id} was rejected by Engineering Manager. Reason: {dto.ManagerReason}";
                 backend.Services.NotificationCenter.Create(
                     "Request Rejected by Engineering Manager",
                     msg,
-                    new[] { "BranchManager" },
-                    string.IsNullOrEmpty(makerId) ? Array.Empty<string>() : new[] { makerId });
+                    Array.Empty<string>(), // Avoid broadcasting to all
+                    string.IsNullOrEmpty(makerId) ? Array.Empty<string>() : new[] { makerId },
+                    request.Id,
+                    branchId);
             }
             catch { }
 
@@ -301,12 +323,15 @@ namespace backend.Services
             try
             {
                 var makerId = request.BranchUserId;
+                var branchId = await GetBranchIdForRequestAsync(makerId);
                 var msg = $"Your request #{request.Id} was rejected by the Engineering Officer. Reason: {dto.EngineerReason}";
                 backend.Services.NotificationCenter.Create(
                     "Request Rejected by Engineer",
                     msg,
-                    new[] { "BranchManager" },
-                    string.IsNullOrEmpty(makerId) ? Array.Empty<string>() : new[] { makerId });
+                    Array.Empty<string>(), // Target directly to maker
+                    string.IsNullOrEmpty(makerId) ? Array.Empty<string>() : new[] { makerId },
+                    request.Id,
+                    branchId);
             }
             catch { }
 
@@ -335,8 +360,10 @@ namespace backend.Services
                 backend.Services.NotificationCenter.Create(
                     "Assigned to Engineer",
                     $"You have been assigned to request #{request.Id}.",
-                    new[] { "Engineer" },
-                    string.IsNullOrEmpty(engineerId) ? Array.Empty<string>() : new[] { engineerId });
+                    Array.Empty<string>(), // Target specifically
+                    string.IsNullOrEmpty(engineerId) ? Array.Empty<string>() : new[] { engineerId },
+                    request.Id,
+                    null); // Engineer notifications don't need branch filter
             }
             catch { }
 
@@ -364,8 +391,10 @@ namespace backend.Services
                 backend.Services.NotificationCenter.Create(
                     "Assigned to Engineer",
                     $"You have been assigned to request #{request.Id}.",
-                    new[] { "Engineer" },
-                    string.IsNullOrEmpty(officerId) ? Array.Empty<string>() : new[] { officerId });
+                    Array.Empty<string>(), // Target specifically
+                    string.IsNullOrEmpty(officerId) ? Array.Empty<string>() : new[] { officerId },
+                    request.Id,
+                    null);
             }
             catch { }
 
@@ -510,11 +539,18 @@ namespace backend.Services
                 var engineerName = estimationRequest.AssignedEngineer?.FirstName ?? "Engineer";
                 var engineerLastName = estimationRequest.AssignedEngineer?.LastName ?? "";
                 var fullName = $"{engineerName} {engineerLastName}".Trim();
+                
+                var makerId = estimationRequest.BranchUserId;
+                var branchId = await GetBranchIdForRequestAsync(makerId);
+                
+                // Notify both Engineering Manager and the Branch Manager who submitted the request
                 backend.Services.NotificationCenter.Create(
                     "Estimation Report Submitted",
-                    $"Estimation report for Request #{estimationRequest.Id} has been submitted by {fullName}. Ready for review by Branch Manager and Manager.",
-                    new[] { "BranchManager", "Checker", "Manager" },
-                    Array.Empty<string>());
+                    $"Estimation report for Request #{estimationRequest.Id} has been submitted by {fullName}. Ready for review.",
+                    new[] { "EngineeringManager" },
+                    string.IsNullOrEmpty(makerId) ? Array.Empty<string>() : new[] { makerId },
+                    estimationRequest.Id,
+                    branchId);
             }
             catch { }
 
@@ -644,11 +680,14 @@ namespace backend.Services
             // Notify Manager that the request has been resent by Branch Manager
             try
             {
+                var branchId = await GetBranchIdForRequestAsync(request.BranchUserId);
                 backend.Services.NotificationCenter.Create(
                     "Request Resent",
                     $"Request #{request.Id} has been resent by Branch Manager and is awaiting Engineering Manager review.",
                     new[] { "EngineeringManager" },
-                    Array.Empty<string>());
+                    Array.Empty<string>(),
+                    request.Id,
+                    branchId);
             }
             catch { }
 
@@ -700,15 +739,25 @@ namespace backend.Services
             // Notify Manager that a pending request was updated by Branch Manager
             try
             {
+                var branchId = await GetBranchIdForRequestAsync(request.BranchUserId);
                 backend.Services.NotificationCenter.Create(
                     "Request Updated",
                     $"Request #{request.Id} was updated by Branch Manager and is awaiting Engineering Manager review.",
                     new[] { "EngineeringManager" },
-                    Array.Empty<string>());
+                    Array.Empty<string>(),
+                    request.Id,
+                    branchId);
             }
             catch { }
 
             return (true, null);
+        }
+
+        private async Task<string?> GetBranchIdForRequestAsync(string? branchUserId)
+        {
+            if (string.IsNullOrEmpty(branchUserId)) return null;
+            var user = await _context.Users.FindAsync(branchUserId);
+            return user?.BranchId?.ToString();
         }
 
         private static TypeOfBuilding ParseBuildingType(string? value, TypeOfBuilding fallback) =>
@@ -849,7 +898,28 @@ namespace backend.Services
                 BranchUserName = request.BranchUser != null
                     ? $"{request.BranchUser.FirstName ?? string.Empty} {request.BranchUser.LastName ?? string.Empty}".Trim()
                     : string.Empty,
+                BranchName = request.BranchUser?.UserBranch?.Name,
+                BranchId = request.BranchUser?.BranchId?.ToString(),
+                BranchManagerName = request.BranchUser?.UserBranch?.Manager != null
+                    ? $"{request.BranchUser.UserBranch.Manager.FirstName ?? string.Empty} {request.BranchUser.UserBranch.Manager.LastName ?? string.Empty}".Trim()
+                    // Fallback: the creator IS the branch manager
+                    : (request.BranchUser != null
+                        ? $"{request.BranchUser.FirstName ?? string.Empty} {request.BranchUser.LastName ?? string.Empty}".Trim()
+                        : string.Empty),
                 ReportId = includeReport ? request.Report?.Id : null,
+                Report = includeReport && request.Report != null ? new EngineeringReportResponseDto
+                {
+                    Id = request.Report.Id,
+                    EstimationRequestId = request.Report.EstimationRequestId,
+                    AssignedEngineerId = request.Report.AssignedEngineerId,
+                    AssignedEngineerName = request.Report.AssignedEngineer != null
+                        ? $"{request.Report.AssignedEngineer.FirstName ?? string.Empty} {request.Report.AssignedEngineer.LastName ?? string.Empty}".Trim()
+                        : string.Empty,
+                    SiteVisitDate = request.Report.SiteVisitDate,
+                    Remarks = request.Report.Remarks,
+                    EstimatedValue = request.Report.EstimatedValue,
+                    CreatedAt = request.Report.CreatedAt
+                } : null,
                 AssignedEngineerId = request.AssignedEngineerId,
                 AssignedEngineerName = request.AssignedEngineer != null
                     ? $"{request.AssignedEngineer.FirstName ?? string.Empty} {request.AssignedEngineer.LastName ?? string.Empty}".Trim()
@@ -906,6 +976,33 @@ namespace backend.Services
                 Cities = cities,
                 SubCities = subCities,
                 Kebeles = kebeles
+            };
+        }
+
+        public async Task<bool> CheckLhcExistsAsync(string lhcNo)
+        {
+            if (string.IsNullOrWhiteSpace(lhcNo)) return false;
+            return await _context.EstimationRequests.AnyAsync(r => r.LHUNo.ToLower() == lhcNo.ToLower());
+        }
+
+        public async Task<LhcCheckResultDto> CheckLhcWithMetadataAsync(string lhcNo)
+        {
+            if (string.IsNullOrWhiteSpace(lhcNo))
+                return new LhcCheckResultDto { Exists = false };
+
+            var existing = await _context.EstimationRequests
+                .Where(r => r.LHUNo.ToLower() == lhcNo.ToLower())
+                .OrderBy(r => r.CreatedAt)
+                .FirstOrDefaultAsync();
+
+            if (existing == null)
+                return new LhcCheckResultDto { Exists = false, LhcNo = lhcNo };
+
+            return new LhcCheckResultDto
+            {
+                Exists = true,
+                LhcNo = lhcNo,
+                FirstEstimationDate = existing.CreatedAt
             };
         }
     }

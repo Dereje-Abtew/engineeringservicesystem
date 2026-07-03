@@ -24,15 +24,24 @@ namespace backend.Controllers
 
         // GET: api/Notifications
         [HttpGet]
-        public ActionResult<IEnumerable<NotificationDto>> GetNotifications()
+        public async Task<ActionResult<IEnumerable<NotificationDto>>> GetNotifications()
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
             if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
             var roles = User.Claims.Where(c => c.Type == ClaimTypes.Role).Select(c => c.Value).ToArray();
 
-            // delegate to NotificationCenter
-            var results = backend.Services.NotificationCenter.GetForUser(userId, roles).ToList();
+            // Get user's branchId if available (for branch manager filtering)
+            string? userBranchId = null;
+            var dbContext = HttpContext.RequestServices.GetService(typeof(backend.Data.ApplicationDbContext)) as backend.Data.ApplicationDbContext;
+            if (dbContext != null)
+            {
+                var user = await dbContext.Users.FindAsync(userId);
+                userBranchId = user?.BranchId?.ToString();
+            }
+
+            // delegate to NotificationCenter with branchId
+            var results = backend.Services.NotificationCenter.GetForUser(userId, roles, userBranchId).ToList();
             return Ok(results);
         }
 

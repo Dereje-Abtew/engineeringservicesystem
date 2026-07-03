@@ -18,7 +18,7 @@ namespace backend.Services
             Create("Welcome", "Notifications system initialized", Array.Empty<string>(), Array.Empty<string>());
         }
 
-        public static backend.DTOs.NotificationDto Create(string title, string message, string[] targetRoles, string[] recommendedUserIds)
+        public static backend.DTOs.NotificationDto Create(string title, string message, string[] targetRoles, string[] recommendedUserIds, int? requestId = null, string? branchId = null)
         {
             var id = System.Threading.Interlocked.Increment(ref _nextId);
             var rec = new NotificationRecord
@@ -29,17 +29,34 @@ namespace backend.Services
                 TargetRoles = targetRoles ?? Array.Empty<string>(),
                 RecommendedUserIds = recommendedUserIds ?? Array.Empty<string>(),
                 CreatedAt = DateTime.UtcNow,
-                ReadBy = new HashSet<string>()
+                ReadBy = new HashSet<string>(),
+                RequestId = requestId,
+                BranchId = branchId
             };
             _store[id] = rec;
             return ToDto(rec);
         }
 
-        public static IEnumerable<backend.DTOs.NotificationDto> GetForUser(string userId, string[] roles)
+        public static IEnumerable<backend.DTOs.NotificationDto> GetForUser(string userId, string[] roles, string? userBranchId = null)
         {
             var results = _store.Values
-                .Where(n => (n.TargetRoles == null || n.TargetRoles.Length == 0 || n.TargetRoles.Intersect(roles, StringComparer.OrdinalIgnoreCase).Any())
-                         || (n.RecommendedUserIds?.Length > 0 && !string.IsNullOrEmpty(userId) && n.RecommendedUserIds.Contains(userId)))
+                .Where(n =>
+                {
+                    // Check role match or specific user recommendation
+                    var isTargeted = (n.TargetRoles == null || n.TargetRoles.Length == 0 || n.TargetRoles.Intersect(roles, StringComparer.OrdinalIgnoreCase).Any())
+                                   || (n.RecommendedUserIds?.Length > 0 && !string.IsNullOrEmpty(userId) && n.RecommendedUserIds.Contains(userId));
+                    
+                    if (!isTargeted) return false;
+                    
+                    // For branch managers, filter by branch
+                    if (!string.IsNullOrEmpty(userBranchId) && roles.Any(r => r.Equals("BranchManager", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        // Only show notifications without branchId (global) or matching branch
+                        return string.IsNullOrEmpty(n.BranchId) || n.BranchId == userBranchId;
+                    }
+                    
+                    return true;
+                })
                 .OrderByDescending(n => n.CreatedAt)
                 .Select(n => ToDtoForUser(n, userId))
                 .ToList();
@@ -67,7 +84,9 @@ namespace backend.Services
                 TargetRoles = rec.TargetRoles,
                 RecommendedUserIds = rec.RecommendedUserIds,
                 CreatedAt = rec.CreatedAt,
-                IsRead = false
+                IsRead = false,
+                RequestId = rec.RequestId,
+                BranchId = rec.BranchId
             };
         }
 
@@ -81,7 +100,9 @@ namespace backend.Services
                 TargetRoles = rec.TargetRoles,
                 RecommendedUserIds = rec.RecommendedUserIds,
                 CreatedAt = rec.CreatedAt,
-                IsRead = !string.IsNullOrEmpty(userId) && rec.ReadBy.Contains(userId)
+                IsRead = !string.IsNullOrEmpty(userId) && rec.ReadBy.Contains(userId),
+                RequestId = rec.RequestId,
+                BranchId = rec.BranchId
             };
         }
 
@@ -94,6 +115,8 @@ namespace backend.Services
             public string[] RecommendedUserIds { get; set; } = Array.Empty<string>();
             public DateTime CreatedAt { get; set; }
             public HashSet<string> ReadBy { get; set; } = new HashSet<string>();
+            public int? RequestId { get; set; }
+            public string? BranchId { get; set; }
         }
     }
 

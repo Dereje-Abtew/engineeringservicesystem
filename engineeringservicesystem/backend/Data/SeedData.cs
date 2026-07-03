@@ -55,14 +55,15 @@ namespace backend.Data
                 {
                     permissionsToAssign.Add(Permissions.DashboardView);
                     permissionsToAssign.Add(Permissions.RequestsView);
-                    permissionsToAssign.Add(Permissions.RequestsViewAll);            // See all requests including pending (status 0)
-                    permissionsToAssign.Add(Permissions.RequestsApprove);            // Approve at status 0 (from BranchManager)
-                    permissionsToAssign.Add(Permissions.RequestsReject);             // Reject at status 0
-                    permissionsToAssign.Add(Permissions.RequestsAssign);             // Assign Engineering Officer
-                    permissionsToAssign.Add(Permissions.RequestsManageEngineersWorkLoad); // Manage workload
-                    permissionsToAssign.Add(Permissions.RequestsUploadFinalEstimation);   // Upload Final Estimation
-                    permissionsToAssign.Add(Permissions.RequestsViewFilteredEstimation);  // See Estimation Report
-                    permissionsToAssign.Add(Permissions.RequestsViewEstimation);          // See full estimation details
+                    permissionsToAssign.Add(Permissions.RequestsViewAll);
+                    permissionsToAssign.Add(Permissions.RequestsApprove);
+                    permissionsToAssign.Add(Permissions.RequestsReject);
+                    permissionsToAssign.Add(Permissions.RequestsAssign);
+                    permissionsToAssign.Add(Permissions.RequestsManageEngineersWorkLoad);
+                    permissionsToAssign.Add(Permissions.RequestsUploadFinalEstimation);
+                    permissionsToAssign.Add(Permissions.RequestsViewFilteredEstimation);
+                    permissionsToAssign.Add(Permissions.RequestsViewEstimation);
+                    permissionsToAssign.Add(Permissions.WorkflowTimelineView);
                 }
                 else if (roleName == "EngineeringOfficer")
                 {
@@ -71,17 +72,17 @@ namespace backend.Data
                     permissionsToAssign.Add(Permissions.RequestsViewAssigned);
                     permissionsToAssign.Add(Permissions.RequestsEdit);
                     permissionsToAssign.Add(Permissions.RequestsEstimate);
+                    permissionsToAssign.Add(Permissions.WorkflowTimelineView);
                 }
                 else if (roleName == "BranchManager")
                 {
-                    // Replaces Maker + Checker: creates and manages branch requests only.
-                    // Manager handles all approvals — BranchManager does NOT approve.
                     permissionsToAssign.Add(Permissions.DashboardView);
                     permissionsToAssign.Add(Permissions.RequestsView);
-                    permissionsToAssign.Add(Permissions.RequestsViewBranch);         // See all branch requests
-                    permissionsToAssign.Add(Permissions.RequestsCreate);             // Create requests
-                    permissionsToAssign.Add(Permissions.RequestsEdit);               // Edit pending requests
-                    permissionsToAssign.Add(Permissions.RequestsViewFilteredEstimation); // See Estimation Report
+                    permissionsToAssign.Add(Permissions.RequestsViewBranch);
+                    permissionsToAssign.Add(Permissions.RequestsCreate);
+                    permissionsToAssign.Add(Permissions.RequestsEdit);
+                    permissionsToAssign.Add(Permissions.RequestsViewFilteredEstimation);
+                    permissionsToAssign.Add(Permissions.WorkflowTimelineView);
                 }
 
                 foreach (var perm in permissionsToAssign)
